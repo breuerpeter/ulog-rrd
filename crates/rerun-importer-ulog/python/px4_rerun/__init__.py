@@ -46,10 +46,21 @@ def _root(prefix: str) -> str:
     return "/" + prefix.strip("/") if prefix.strip("/") else ""
 
 
-def views(prefix: str = "") -> list[rrb.View]:
-    """The views of the vehicle under ``prefix``: its 3D pose and trail, and its log."""
+def views(prefix: str = "") -> list[rrb.View | rrb.Container]:
+    """The views of the vehicle under ``prefix``: the vehicle up close beside the whole flight,
+    and its log."""
     root = _root(prefix)
+    contents = [f"+ {root}/vehicle/**"]
     return [
-        rrb.Spatial3DView(name="PX4 vehicle", origin=root or "/", contents=[f"+ {root}/vehicle/**"]),
+        rrb.Horizontal(
+            rrb.Spatial3DView(
+                name="PX4 vehicle",
+                origin=root or "/",
+                contents=contents,
+                eye_controls=rrb.archetypes.EyeControls3D(kind="Orbital", tracking_entity=f"{root}/vehicle/body"),
+            ),
+            rrb.Spatial3DView(name="PX4 flight", origin=root or "/", contents=contents),
+            name="PX4 3D",
+        ),
         rrb.TextLogView(name="PX4 log", origin=f"{root}/log"),
     ]
