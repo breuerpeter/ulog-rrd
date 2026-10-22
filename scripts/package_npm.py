@@ -16,7 +16,8 @@ npm = Path(sys.argv[1])
 rrb.Blueprint(*px4_rerun.views(), collapse_panels=True).save("px4-rerun", str(npm / "blueprints" / "vehicle.rbl"))
 
 pkg = json.loads((npm / "package.json").read_text())
-pkg["files"].append("blueprints")
+if "blueprints" not in pkg["files"]:
+    pkg["files"].append("blueprints")
 pkg["peerDependencies"] = {"@rerun-io/web-viewer": "~0.40.0"}
 pkg["exports"] = {".": "./px4_rerun_wasm.js", "./blueprints/*": "./blueprints/*"}
 (npm / "package.json").write_text(json.dumps(pkg, indent=2) + "\n")
