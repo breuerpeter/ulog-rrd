@@ -222,6 +222,9 @@ fn visualize(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
         w.static_row("", &ViewCoordinates::RFU())?;
     }
     pose(ulog, w)?;
+    home(ulog, w)?;
+    setpoint(ulog, w)?;
+    mission(ulog, w)?;
     for (ts, severity, text) in &ulog.messages {
         w.row("log", w.at(*ts), &TextLog::new(text.as_str()).with_level(level(*severity)))?;
     }
@@ -292,6 +295,99 @@ fn pose(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
         }
     }
     w.static_row("trail", &LineStrips3D::new([trail]).with_colors([Color::from_unmultiplied_rgba(255, 255, 255, 200)]))?;
+    Ok(())
+}
+
+/// A point sized in screen points, so it stays visible over a flight of any size.
+fn marker(p: [f32; 3], color: Color, ui_radius: f32, label: Option<&str>) -> Points3D {
+    let points = Points3D::new([p]).with_colors([color]).with_radii([Radius::new_ui_points(ui_radius)]);
+    match label {
+        Some(label) => points.with_labels([label]).with_show_labels(true),
+        None => points,
+    }
+}
+
+/// The home position, each time PX4 sets it.
+fn home(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
+    let Some(home) = ulog.tables.get("home_position") else { return Ok(()) };
+    let (Some(x), Some(y), Some(z)) = (home.get("x"), home.get("y"), home.get("z")) else { return Ok(()) };
+    for (i, ts) in home.timestamps.iter().enumerate() {
+        if x[i].is_finite() && y[i].is_finite() && z[i].is_finite() {
+            let p = ned_to_zup(x[i], y[i], z[i]);
+            w.row("home", w.at(*ts), &marker(p, Color::from_rgb(0, 255, 0), 5.0, Some("Home")))?;
+        }
+    }
+    Ok(())
+}
+
+/// The position setpoint and its yaw.
+fn setpoint(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
+    let Some(sp) = ulog.tables.get("vehicle_local_position_setpoint") else { return Ok(()) };
+    let (Some(x), Some(y), Some(z), Some(yaw)) = (sp.get("x"), sp.get("y"), sp.get("z"), sp.get("yaw")) else {
+        return Ok(());
+    };
+    for (i, ts) in sp.timestamps.iter().enumerate() {
+        if !(x[i].is_finite() && y[i].is_finite() && z[i].is_finite()) {
+            continue;
+        }
+        let p = ned_to_zup(x[i], y[i], z[i]);
+        w.row("setpoint", w.at(*ts), &marker(p, Color::from_unmultiplied_rgba(255, 255, 255, 120), 3.0, None))?;
+        if yaw[i].is_finite() {
+            // Yaw is clockwise from north in NED; the arrow is as long as the body axes.
+            let fwd = ned_to_zup(yaw[i].cos() * 0.3, yaw[i].sin() * 0.3, 0.0);
+            let arrow = Arrows3D::from_vectors([fwd]).with_origins([p]).with_colors([Color::from_rgb(255, 0, 0)]);
+            w.row("setpoint/yaw", w.at(*ts), &arrow)?;
+        }
+    }
+    Ok(())
+}
+
+/// The name of a MAV_CMD a mission item carries.
+fn nav_cmd_label(nav_cmd: f64) -> &'static str {
+    match nav_cmd as u16 {
+        16 => "WP",
+        17 => "LOITER",
+        19 => "LOITER_T",
+        20 => "RTL",
+        21 => "LAND",
+        22 => "TAKEOFF",
+        84 => "VTOL_TAKEOFF",
+        85 => "VTOL_LAND",
+        _ => "CMD",
+    }
+}
+
+/// The current mission item, from the moment it becomes current, in the local frame.
+fn mission(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
+    const EARTH_RADIUS_M: f64 = 6_371_000.0;
+    let (Some(items), Some(pos)) = (ulog.tables.get("navigator_mission_item"), ulog.tables.get("vehicle_local_position")) else {
+        return Ok(());
+    };
+    // The local frame's reference: the first sample that has one.
+    let (Some(xy_global), Some(ref_lat), Some(ref_lon), Some(ref_alt)) =
+        (pos.get("xy_global"), pos.get("ref_lat"), pos.get("ref_lon"), pos.get("ref_alt"))
+    else {
+        return Ok(());
+    };
+    let Some(r) = xy_global.iter().position(|v| *v != 0.0) else { return Ok(()) };
+    let (lat0, lon0, alt0) = (ref_lat[r], ref_lon[r], ref_alt[r]);
+    let (Some(lat), Some(lon), Some(alt), Some(cmd)) =
+        (items.get("latitude"), items.get("longitude"), items.get("altitude"), items.get("nav_cmd"))
+    else {
+        return Ok(());
+    };
+    let relative = items.get("altitude_is_relative");
+    for (i, ts) in items.timestamps.iter().enumerate() {
+        // An equirectangular projection about the reference, as the C++ library does.
+        let north = (lat[i] - lat0).to_radians() * EARTH_RADIUS_M;
+        let east = (lon[i] - lon0).to_radians() * EARTH_RADIUS_M * lat0.to_radians().cos();
+        let down = if relative.is_some_and(|r| r[i] != 0.0) { -alt[i] } else { -(alt[i] - alt0) };
+        if !(north.is_finite() && east.is_finite() && down.is_finite()) {
+            continue;
+        }
+        let p = ned_to_zup(north, east, down);
+        w.row("mission_item", w.at(*ts), &marker(p, Color::from_rgb(255, 165, 0), 6.0, Some(nav_cmd_label(cmd[i]))))?;
+    }
     Ok(())
 }
 

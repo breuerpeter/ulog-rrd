@@ -50,7 +50,8 @@ def views(prefix: str = "") -> list[rrb.View | rrb.Container]:
     """The views of the vehicle under ``prefix``: a camera that follows the vehicle beside the
     whole flight, and its log."""
     root = _root(prefix)
-    contents = [f"+ {root}/vehicle/**", f"+ {root}/trail"]
+    # Every entity px4-rerun draws in 3D, so a new one shows without a change here.
+    contents = [f"+ {root}/**", f"- {root}/log", f"- {root}/timeseries/**"]
     return [
         rrb.Horizontal(
             # The origin moves with the vehicle and keeps the world's axes, so the eye stays behind it.
