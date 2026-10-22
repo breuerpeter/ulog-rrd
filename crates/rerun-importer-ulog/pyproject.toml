@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "px4-rerun"
+description = "PX4 ULog to Rerun: the rerun-importer-ulog importer and the blueprint views for its entities"
+requires-python = ">=3.10"
+license = "MIT"
+# The Rerun version the importer encodes for: a consumer on another Rerun version fails to resolve.
+dependencies = ["rerun-sdk>=0.40,<0.41"]
+dynamic = ["version"]
+
+[tool.maturin]
+bindings = "bin"
+python-source = "python"
+module-name = "px4_rerun"

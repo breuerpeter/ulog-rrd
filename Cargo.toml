@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = ["crates/px4-rerun", "crates/px4-rerun-wasm", "crates/rerun-importer-ulog"]
+
+[workspace.package]
+version = "0.3.1"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+# One Rerun version for every artifact: the npm package and the wheel declare it to their consumers.
+re_chunk = "=0.40.0"
+re_log_encoding = { version = "=0.40.0", features = ["encoder"] }
+re_log_msg = "=0.40.0"
+re_log_types = "=0.40.0"
+re_sdk_types = { version = "=0.40.0", default-features = false }
+yule_log = "0.4.0"
+px4-rerun = { path = "crates/px4-rerun" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

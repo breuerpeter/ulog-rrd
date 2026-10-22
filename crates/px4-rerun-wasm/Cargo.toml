@@ -1,0 +1,16 @@
+[package]
+name = "px4-rerun-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+px4-rerun.workspace = true
+wasm-bindgen = "0.2"
+
+# wasm-pack's bundled wasm-opt predates the features rustc emits for wasm32 by default.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue"]
