@@ -47,17 +47,20 @@ def _root(prefix: str) -> str:
 
 
 def views(prefix: str = "") -> list[rrb.View | rrb.Container]:
-    """The views of the vehicle under ``prefix``: the vehicle up close beside the whole flight,
-    and its log."""
+    """The views of the vehicle under ``prefix``: a camera that follows the vehicle beside the
+    whole flight, and its log."""
     root = _root(prefix)
-    contents = [f"+ {root}/vehicle/**"]
+    contents = [f"+ {root}/vehicle/**", f"+ {root}/trail"]
     return [
         rrb.Horizontal(
+            # The origin moves with the vehicle and keeps the world's axes, so the eye stays behind it.
             rrb.Spatial3DView(
                 name="PX4 vehicle",
-                origin=root or "/",
+                origin=f"{root}/vehicle",
                 contents=contents,
-                eye_controls=rrb.archetypes.EyeControls3D(kind="Orbital", tracking_entity=f"{root}/vehicle/body/frd"),
+                eye_controls=rrb.archetypes.EyeControls3D(
+                    kind="Orbital", position=[-1.2, -1.2, 0.8], look_target=[0.0, 0.0, 0.0], eye_up=[0.0, 0.0, 1.0]
+                ),
             ),
             rrb.Spatial3DView(name="PX4 flight", origin=root or "/", contents=contents),
             name="PX4 3D",

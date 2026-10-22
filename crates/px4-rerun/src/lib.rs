@@ -240,6 +240,9 @@ fn visualize(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
 }
 
 /// The vehicle's estimated pose, its body axes, and the flown trail.
+///
+/// `vehicle` carries the position alone and `vehicle/body` the attitude, so a view with `vehicle` as
+/// its origin follows the vehicle with the world's axes: a chase view. The trail sits in the world.
 fn pose(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     let (Some(pos), Some(att)) = (ulog.tables.get("vehicle_local_position"), ulog.tables.get("vehicle_attitude")) else {
         return Ok(());
@@ -260,8 +263,7 @@ fn pose(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
         &Points3D::new([[0.0, 0.0, 0.0]])
             .with_radii([Radius::new_ui_points(5.0)])
             .with_colors([Color::from_rgb(255, 255, 255)])
-            .with_labels(["Vehicle"])
-            .with_show_labels(true),
+    ,
     )?;
     let mut trail = Vec::with_capacity(pos.timestamps.len());
     let mut j = 0;
@@ -275,20 +277,21 @@ fn pose(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
         }
         let p = ned_to_zup(x[i], y[i], z[i]);
         let rot = ned_quat_to_zup(q[0][j], q[1][j], q[2][j], q[3][j]);
-        w.row("vehicle/body", w.at(*ts), &Transform3D::from_translation_rotation(p, rot))?;
+        w.row("vehicle", w.at(*ts), &Transform3D::from_translation(p))?;
+        w.row("vehicle/body", w.at(*ts), &Transform3D::from_rotation(rot))?;
         trail.push(p);
         if let (Some(vx), Some(vy), Some(vz)) = (pos.get("vx"), pos.get("vy"), pos.get("vz")) {
             // 10 m/s draws as long as the body axes, 0.3 m.
             let v = ned_to_zup(vx[i] * 0.03, vy[i] * 0.03, vz[i] * 0.03);
             let speed = (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]).sqrt();
             let arrow = Arrows3D::from_vectors([v])
-                .with_origins([p])
+                .with_origins([[0.0, 0.0, 0.0]])
                 .with_colors([Color::from_rgb(0, 255, 255)])
                 .with_labels([format!("{speed:.1} m/s")]);
             w.row("vehicle/velocity", w.at(*ts), &arrow)?;
         }
     }
-    w.static_row("vehicle/trail", &LineStrips3D::new([trail]).with_colors([Color::from_unmultiplied_rgba(255, 255, 255, 200)]))?;
+    w.static_row("trail", &LineStrips3D::new([trail]).with_colors([Color::from_unmultiplied_rgba(255, 255, 255, 200)]))?;
     Ok(())
 }
 
