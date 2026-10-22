@@ -11,8 +11,8 @@ use re_chunk::{Chunk, ChunkBuilder, RowId};
 use re_log_encoding::Encoder;
 use re_log_msg::{LogMsg, SetStoreInfo, StoreInfo, StoreSource};
 use re_log_types::{ApplicationId, EntityPath, StoreId, TimeInt, TimePoint, Timeline};
-use re_sdk_types::archetypes::{Arrows3D, LineStrips3D, Scalars, TextLog, Transform3D, ViewCoordinates};
-use re_sdk_types::components::{Color, TextLogLevel};
+use re_sdk_types::archetypes::{Arrows3D, LineStrips3D, Points3D, Scalars, TextLog, Transform3D, ViewCoordinates};
+use re_sdk_types::components::{Color, Radius, TextLogLevel};
 use re_sdk_types::datatypes::Quaternion;
 use re_sdk_types::AsComponents;
 use yule_log::model::{inst::FieldValue, msg::UlogMessage};
@@ -253,6 +253,15 @@ fn pose(ulog: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
         "vehicle/body/frd",
         &Arrows3D::from_vectors([[0.3, 0.0, 0.0], [0.0, -0.3, 0.0], [0.0, 0.0, -0.3]])
             .with_colors([Color::from_rgb(255, 0, 0), Color::from_rgb(0, 255, 0), Color::from_rgb(0, 0, 255)]),
+    )?;
+    // A marker sized in screen points, so the vehicle stays visible over a flight of any size
+    w.static_row(
+        "vehicle/body/marker",
+        &Points3D::new([[0.0, 0.0, 0.0]])
+            .with_radii([Radius::new_ui_points(5.0)])
+            .with_colors([Color::from_rgb(255, 255, 255)])
+            .with_labels(["Vehicle"])
+            .with_show_labels(true),
     )?;
     let mut trail = Vec::with_capacity(pos.timestamps.len());
     let mut j = 0;

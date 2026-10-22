@@ -57,7 +57,7 @@ def views(prefix: str = "") -> list[rrb.View | rrb.Container]:
                 name="PX4 vehicle",
                 origin=root or "/",
                 contents=contents,
-                eye_controls=rrb.archetypes.EyeControls3D(kind="Orbital", tracking_entity=f"{root}/vehicle/body"),
+                eye_controls=rrb.archetypes.EyeControls3D(kind="Orbital", tracking_entity=f"{root}/vehicle/body/frd"),
             ),
             rrb.Spatial3DView(name="PX4 flight", origin=root or "/", contents=contents),
             name="PX4 3D",
