@@ -1,0 +1,16 @@
+[package]
+name = "px4-rerun"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+re_chunk.workspace = true
+re_log_encoding.workspace = true
+re_log_msg.workspace = true
+re_log_types.workspace = true
+re_sdk_types.workspace = true
+yule_log.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }

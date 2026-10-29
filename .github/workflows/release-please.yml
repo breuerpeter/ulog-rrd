@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-24.04
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  upload-binary:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libproj-dev libtiff-dev libssl-dev
+
+      - name: Build
+        run: cmake -S . -B build && cmake --build build -j$(nproc)
+
+      - name: Package release
+        run: |
+          mkdir -p stage/bin stage/share/px4-rerun/blueprints
+          cp build/rerun-loader-ulog/rerun-loader-ulog stage/bin/
+          cp blueprints/*.rbl stage/share/px4-rerun/blueprints/
+          cp LICENSE THIRD_PARTY_LICENSES.md stage/share/px4-rerun/
+          tar czf px4-rerun-linux-x86_64.tar.gz -C stage .
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ needs.release-please.outputs.tag_name }} \
+            px4-rerun-linux-x86_64.tar.gz
