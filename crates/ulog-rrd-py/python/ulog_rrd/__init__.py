@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ulog_rrd._ulog_rrd import RERUN_VERSION, __version__
+from ulog_rrd._ulog_rrd import append as _append
 from ulog_rrd._ulog_rrd import convert as _convert
 from ulog_rrd.views import blueprint, views
 
@@ -49,7 +50,7 @@ def convert(
             logged with ``translation``.
 
     Returns:
-        The ``.rrd`` bytes: one stream, which a viewer opens and ``append`` adds to a file.
+        The ``.rrd`` bytes, which a viewer opens.
 
     Raises:
         ValueError: The bytes are not a ULog this converter reads.
@@ -68,19 +69,24 @@ def convert(
 
 
 def append(ulog: str | Path, rrd: str | Path, *, application_id: str, recording_id: str, **options) -> None:
-    """Convert the ULog at ``ulog`` and append it to the recording at ``rrd``.
+    """Convert the ULog at ``ulog`` and add it to the recording at ``rrd``.
 
-    An ``.rrd`` file is a sequence of streams, so the converted log goes on the end of the file
-    and the viewer reads both. The rows join the file's recording when ``application_id`` and
-    ``recording_id`` are the file's; the file's blueprint stays as it is.
+    The file is written anew: its own messages, then the converted log's chunks, under one footer,
+    so every reader of the file, the viewer and ``rerun.chunk.RrdReader``, reads both. The rows join
+    the file's recording when ``application_id`` and ``recording_id`` are the file's; the file's
+    blueprint stays as it is.
 
     Args:
         ulog: The ULog file.
-        rrd: The recording to append to, which a closed ``rr.save`` wrote.
+        rrd: The recording to add to, which a closed ``rr.save`` wrote.
         application_id: The file's application id.
         recording_id: The file's recording id.
         **options: The other arguments of :func:`convert`.
+
+    Raises:
+        FileNotFoundError: There is no file at ``ulog`` or ``rrd``.
+        ValueError: The ULog does not parse, or the recording does not.
     """
-    data = convert(Path(ulog).read_bytes(), application_id=application_id, recording_id=recording_id, **options)
-    with open(rrd, "ab") as f:
-        f.write(data)
+    if not Path(rrd).is_file():
+        raise FileNotFoundError(rrd)
+    _append(Path(ulog).read_bytes(), Path(rrd), application_id=application_id, recording_id=recording_id, **options)

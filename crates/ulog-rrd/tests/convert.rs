@@ -135,3 +135,53 @@ fn a_prefix_moves_every_entity_and_carries_the_frame() {
 fn garbage_is_an_error_not_a_panic() {
     assert!(convert(b"not a ulog", &Options::default()).is_err());
 }
+
+#[cfg(feature = "append")]
+#[test]
+fn append_rewrites_a_recording_with_the_log_added_under_one_footer() {
+    use re_chunk::{Chunk, RowId, TimePoint};
+    use re_log_encoding::Encoder;
+    use re_log_msg::{SetStoreInfo, StoreInfo, StoreSource};
+    use re_log_types::StoreId;
+    use re_sdk_types::archetypes::Points3D;
+
+    // A recording another process wrote: one store, one static chunk.
+    let store_id = StoreId::recording("app", "run");
+    let info = StoreInfo::new(store_id.clone(), StoreSource::Unknown);
+    let chunk = Chunk::builder("sim/vehicle/body")
+        .with_archetype(RowId::new(), TimePoint::default(), &Points3D::new([[0.0, 0.0, 1.0]]))
+        .build()
+        .expect("chunk");
+    let file = Encoder::encode(
+        [
+            LogMsg::SetStoreInfo(SetStoreInfo { row_id: *RowId::new(), info }),
+            LogMsg::ArrowMsg(store_id, chunk.to_arrow_msg().expect("arrow")),
+        ]
+        .into_iter()
+        .map(Ok),
+    )
+    .expect("encode");
+    let dir = std::env::temp_dir().join(format!("ulog-rrd-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("dir");
+    let rrd = dir.join("run.rrd");
+    std::fs::write(&rrd, file).expect("write");
+
+    let opts = Options {
+        application_id: "app".into(),
+        recording_id: Some("run".into()),
+        entity_path_prefix: Some("px4_sitl/logs".into()),
+        ..Options::default()
+    };
+    ulog_rrd::append(&flight(), &opts, &rrd).expect("append");
+
+    let bytes = std::fs::read(&rrd).expect("read");
+    let chunks = chunks(&bytes);
+    assert_eq!(rows(&chunks, "/sim/vehicle/body"), 1, "the file's own rows stay");
+    assert_eq!(rows(&chunks, "/px4_sitl/logs/vehicle"), 3);
+    let stores: Vec<_> = Decoder::<LogMsg>::decode_lazy(Cursor::new(bytes.as_slice()))
+        .filter(|m| matches!(m, Ok(LogMsg::SetStoreInfo(_))))
+        .collect();
+    assert_eq!(stores.len(), 1, "the file says what its store is once");
+    assert!(!dir.join("run.rrd.tmp").exists());
+    std::fs::remove_dir_all(dir).ok();
+}

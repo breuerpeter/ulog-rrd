@@ -7,8 +7,8 @@ Before a pull request:
 
 ```bash
 cargo fmt --all
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
 ```
 
 A change to what the converter logs updates the table in `README.md` and in `crates/ulog-rrd/src/lib.rs`,

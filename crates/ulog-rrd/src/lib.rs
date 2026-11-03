@@ -1,7 +1,8 @@
 //! PX4 ULog → Rerun recording, as `.rrd` bytes.
 //!
-//! [`convert`] is the one entry point. The wasm package that pulsar loads and the Python wheel that
-//! nexus imports both call it, so the visualizations live here once.
+//! [`convert`] is the entry point: the wasm package that pulsar loads and the Python wheel that nexus
+//! imports both call it, so the visualizations live here once. [`append`] puts a converted log into a
+//! recording on disk, for a caller whose recording another process wrote.
 //!
 //! The recording is encoded from chunks directly, not through Rerun's `RecordingStream`: the stream
 //! starts threads and pulls in networking, and neither builds for wasm32.
@@ -97,8 +98,8 @@ fn err(e: impl std::fmt::Display) -> Error {
     Error(e.to_string())
 }
 
-/// The recording of `ulog` as `.rrd` bytes, in the store the options name.
-pub fn convert(ulog: &[u8], opts: &Options) -> Result<Vec<u8>, Error> {
+/// The recording's messages: its store's info, then one per chunk.
+fn messages(ulog: &[u8], opts: &Options) -> Result<Vec<LogMsg>, Error> {
     let log = parse::parse(ulog)?;
     let mut writer = write::Writer::new(opts)?;
     viz::visualize(&log, &mut writer)?;
@@ -111,12 +112,49 @@ pub fn convert(ulog: &[u8], opts: &Options) -> Result<Vec<u8>, Error> {
     let application_id = ApplicationId::try_new(opts.application_id.clone()).map_err(err)?;
     let store_id = StoreId::recording(application_id, recording_id);
     let info = StoreInfo::new(store_id.clone(), StoreSource::Other(format!("ulog-rrd {VERSION}")));
-    let mut encoder = Encoder::local().map_err(err)?;
-    encoder.append(&LogMsg::SetStoreInfo(SetStoreInfo { row_id: *RowId::new(), info })).map_err(err)?;
+    let mut messages = vec![LogMsg::SetStoreInfo(SetStoreInfo { row_id: *RowId::new(), info })];
     for chunk in chunks {
         let msg = chunk.to_arrow_msg().map_err(err)?;
-        encoder.append(&LogMsg::ArrowMsg(store_id.clone(), msg)).map_err(err)?;
+        messages.push(LogMsg::ArrowMsg(store_id.clone(), msg));
+    }
+    Ok(messages)
+}
+
+/// The recording of `ulog` as `.rrd` bytes, in the store the options name.
+pub fn convert(ulog: &[u8], opts: &Options) -> Result<Vec<u8>, Error> {
+    let mut encoder = Encoder::local().map_err(err)?;
+    for msg in messages(ulog, opts)? {
+        encoder.append(&msg).map_err(err)?;
     }
     encoder.finish().map_err(err)?;
     encoder.into_inner().map_err(err)
+}
+
+/// The recording at `rrd` with `ulog` added: the file's own messages, then the converted log's chunks,
+/// written anew with one footer, so every reader of the file reads both. The rows join the file's
+/// recording when the options name its application and recording ids; the file's blueprint stays as
+/// it is. The new file replaces the old one in one step.
+#[cfg(feature = "append")]
+pub fn append(ulog: &[u8], opts: &Options, rrd: &std::path::Path) -> Result<(), Error> {
+    use std::io::{BufReader, BufWriter, Write as _};
+
+    use re_log_encoding::{Decoder, EncodingOptions};
+
+    let ours = messages(ulog, opts)?;
+    let input = BufReader::new(std::fs::File::open(rrd).map_err(err)?);
+    let tmp = rrd.with_extension("rrd.tmp");
+    let output = BufWriter::new(std::fs::File::create(&tmp).map_err(err)?);
+    let mut encoder =
+        Encoder::new_eager(re_build_info::CrateVersion::LOCAL, EncodingOptions::PROTOBUF_COMPRESSED, output)
+            .map_err(err)?;
+    for msg in Decoder::<LogMsg>::decode_lazy(input) {
+        encoder.append(&msg.map_err(err)?).map_err(err)?;
+    }
+    // The file already says what its store is; only the chunks join it.
+    for msg in ours.into_iter().filter(|m| matches!(m, LogMsg::ArrowMsg(..))) {
+        encoder.append(&msg).map_err(err)?;
+    }
+    encoder.finish().map_err(err)?;
+    encoder.into_inner().map_err(err)?.flush().map_err(err)?;
+    std::fs::rename(&tmp, rrd).map_err(err)
 }

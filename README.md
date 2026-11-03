@@ -73,8 +73,8 @@ ulog_rrd.append(
 ulog_rrd.views("px4_sitl/logs")
 ```
 
-An `.rrd` file is a sequence of streams, so `append` writes the converted log on the end of the
-file. The file's blueprint stays as it is.
+`append` writes the file anew with the converted log's chunks added under one footer, so the viewer
+and `rerun.chunk.RrdReader` both read the whole. The file's blueprint stays as it is.
 
 ## Build
 

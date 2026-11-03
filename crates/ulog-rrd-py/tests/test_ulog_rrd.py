@@ -74,6 +74,16 @@ def test_append_joins_the_files_recording_and_keeps_its_blueprint(tmp_path):
         "/px4_sitl/logs/timeseries/vehicle_attitude",
     } <= after
     assert len([e for e in after if e.startswith("/view/")]) == len([e for e in before if e.startswith("/view/")])
+    # One footer: the chunk reader, which reads the file by its footer, sees the new rows too.
+    from rerun.chunk import RrdReader
+
+    assert "/px4_sitl/logs/vehicle" in {chunk.entity_path for chunk in RrdReader(str(rrd)).stream()}
+    assert not rrd.with_suffix(".rrd.tmp").exists()
+
+
+def test_append_needs_both_files(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        ulog_rrd.append(tmp_path / "flight.ulg", tmp_path / "missing.rrd", application_id="app", recording_id="run")
 
 
 def test_garbage_is_a_value_error():
