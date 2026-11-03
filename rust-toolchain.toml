@@ -1,4 +1,5 @@
-# The floor of the Rerun 0.41 crates; rustup installs it and the wasm target on first use.
+# The floor of the Rerun 0.41 crates; rustup installs it, the wasm target and the lint tools on first use.
 [toolchain]
 channel = "1.98"
+components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]
