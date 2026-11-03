@@ -1,0 +1,28 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "ulog-rrd"
+description = "PX4 ULog to Rerun .rrd: the vehicle in 3D, its log and its time series"
+readme = "../../README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Peter Breuer" }]
+keywords = ["px4", "ulog", "rerun", "drone", "flight-log"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+# The Rerun version the recordings are encoded for: another version does not read them.
+dependencies = ["rerun-sdk>=0.41.0,<0.42"]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/breuerpeter/ulog-rrd"
+
+[tool.maturin]
+python-source = "python"
+module-name = "ulog_rrd._ulog_rrd"
+features = ["pyo3/extension-module"]

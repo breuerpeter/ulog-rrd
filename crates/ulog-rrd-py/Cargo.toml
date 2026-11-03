@@ -1,0 +1,16 @@
+[package]
+name = "ulog-rrd-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "_ulog_rrd"
+crate-type = ["cdylib"]
+
+[dependencies]
+ulog-rrd.workspace = true
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py310"] }
