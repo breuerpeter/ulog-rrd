@@ -24,7 +24,7 @@ manifest.update(
         "version": version,
         "description": "PX4 ULog to Rerun .rrd in the browser: the vehicle in 3D, its log and its time series",
         "license": "MIT",
-        "repository": {"type": "git", "url": "https://github.com/breuerpeter/ulog-rrd"},
+        "repository": {"type": "git", "url": "git+https://github.com/breuerpeter/ulog-rrd.git"},
         "keywords": ["px4", "ulog", "rerun", "drone", "flight-log", "wasm"],
         "files": ["ulog_rrd_bg.wasm", "ulog_rrd.js", "ulog_rrd.d.ts", "README.md", "LICENSE"],
         "peerDependencies": {"@rerun-io/web-viewer": rerun},
