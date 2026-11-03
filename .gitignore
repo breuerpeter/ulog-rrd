@@ -1,4 +1,8 @@
-build/
 /target/
-/npm/
+/crates/*/pkg/
+/crates/ulog-rrd-wasm/blueprint.rbl
+/crates/ulog-rrd-py/target/
+__pycache__/
+*.egg-info/
 /dist/
+/.venv/

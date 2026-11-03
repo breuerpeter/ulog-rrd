@@ -1,0 +1,4 @@
+# The floor of the Rerun 0.41 crates; rustup installs it and the wasm target on first use.
+[toolchain]
+channel = "1.98"
+targets = ["wasm32-unknown-unknown"]
