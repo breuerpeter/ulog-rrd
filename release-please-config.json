@@ -1,4 +1,5 @@
 {
+  "bootstrap-sha": "6b64f8311451d213937d56c2bab68395919ddf81",
   "packages": {
     ".": {
       "release-type": "rust",
