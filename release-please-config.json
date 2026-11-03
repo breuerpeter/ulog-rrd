@@ -2,8 +2,15 @@
   "bootstrap-sha": "6b64f8311451d213937d56c2bab68395919ddf81",
   "packages": {
     ".": {
-      "release-type": "rust",
-      "include-component-in-tag": false
+      "release-type": "simple",
+      "include-component-in-tag": false,
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "Cargo.toml",
+          "jsonpath": "$.workspace.package.version"
+        }
+      ]
     }
   }
 }
