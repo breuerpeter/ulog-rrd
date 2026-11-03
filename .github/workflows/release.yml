@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-24.04
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Both publish through trusted publishing: the registry trusts this workflow, no token is stored.
+  # npmjs.com: package ulog-rrd → Settings → Trusted publisher → this repository and workflow.
+  # pypi.org: project ulog-rrd → Publishing → this repository, workflow release.yml, environment pypi.
+  npm:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: uv run --with rerun-sdk==0.41.0 --no-project scripts/blueprint.py
+      - run: cargo install wasm-pack --locked
+      - run: CARGO_PROFILE_RELEASE_OPT_LEVEL=z wasm-pack build crates/ulog-rrd-wasm --target web --release --out-dir pkg --out-name ulog_rrd
+      - run: python3 scripts/package_npm.py crates/ulog-rrd-wasm/pkg
+      - run: npm publish --access public
+        working-directory: crates/ulog-rrd-wasm/pkg
+
+  pypi:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --manifest-path crates/ulog-rrd-py/Cargo.toml --out dist
+          manylinux: auto
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --manifest-path crates/ulog-rrd-py/Cargo.toml --out dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist

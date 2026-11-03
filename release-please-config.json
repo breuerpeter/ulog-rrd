@@ -1,13 +1,8 @@
 {
   "packages": {
     ".": {
-      "release-type": "simple",
-      "extra-files": [
-        {
-          "type": "generic",
-          "path": "CMakeLists.txt"
-        }
-      ]
+      "release-type": "rust",
+      "include-component-in-tag": false
     }
   }
 }

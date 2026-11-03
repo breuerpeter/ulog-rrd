@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  wasm:
+    name: npm package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v7
+      - run: uv run --with rerun-sdk==0.41.0 --no-project scripts/blueprint.py
+      - run: cargo install wasm-pack --locked
+      - run: CARGO_PROFILE_RELEASE_OPT_LEVEL=z wasm-pack build crates/ulog-rrd-wasm --target web --release --out-dir pkg --out-name ulog_rrd
+      - run: python3 scripts/package_npm.py crates/ulog-rrd-wasm/pkg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm
+          path: crates/ulog-rrd-wasm/pkg
+
+  wheel:
+    name: wheel
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v7
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --manifest-path crates/ulog-rrd-py/Cargo.toml --out dist
+          manylinux: auto
+      - run: uv run --with dist/*.whl --with pytest --with rerun-sdk==0.41.0 --no-project pytest -q crates/ulog-rrd-py/tests
+      - run: uvx ruff@0.14.0 check crates/ulog-rrd-py scripts && uvx ruff@0.14.0 format --check crates/ulog-rrd-py scripts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: dist
