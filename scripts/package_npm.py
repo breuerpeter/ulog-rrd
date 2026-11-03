@@ -1,23 +1,36 @@
-"""Finish the npm package wasm-pack wrote: the blueprints, from the same views the wheel ships, and
-the Rerun web viewer version the recordings are encoded for, as a peer dependency.
+"""Finish the npm package wasm-pack wrote: its name, the files it ships and the Rerun web viewer
+version the recordings are encoded for, as a peer dependency.
 
-Run with the wheel installed: python scripts/package_npm.py <npm dir>
+    python scripts/package_npm.py crates/ulog-rrd-wasm/pkg
 """
 
 import json
+import re
+import shutil
 import sys
 from pathlib import Path
 
-import px4_rerun
-import rerun.blueprint as rrb
+ROOT = Path(__file__).resolve().parent.parent
+pkg = Path(sys.argv[1])
 
-npm = Path(sys.argv[1])
-(npm / "blueprints").mkdir(exist_ok=True)
-rrb.Blueprint(*px4_rerun.views(), collapse_panels=True).save("px4-rerun", str(npm / "blueprints" / "vehicle.rbl"))
+cargo = (ROOT / "Cargo.toml").read_text()
+version = re.search(r'^version = "([^"]+)"', cargo, re.M).group(1)
+rerun = re.search(r'^re_sdk_types = \{ version = "=([^"]+)"', cargo, re.M).group(1)
 
-pkg = json.loads((npm / "package.json").read_text())
-if "blueprints" not in pkg["files"]:
-    pkg["files"].append("blueprints")
-pkg["peerDependencies"] = {"@rerun-io/web-viewer": "~0.40.0"}
-pkg["exports"] = {".": "./px4_rerun_wasm.js", "./blueprints/*": "./blueprints/*"}
-(npm / "package.json").write_text(json.dumps(pkg, indent=2) + "\n")
+manifest = json.loads((pkg / "package.json").read_text())
+manifest.update(
+    {
+        "name": "ulog-rrd",
+        "version": version,
+        "description": "PX4 ULog to Rerun .rrd in the browser: the vehicle in 3D, its log and its time series",
+        "license": "MIT",
+        "repository": {"type": "git", "url": "https://github.com/breuerpeter/ulog-rrd"},
+        "keywords": ["px4", "ulog", "rerun", "drone", "flight-log", "wasm"],
+        "files": ["ulog_rrd_bg.wasm", "ulog_rrd.js", "ulog_rrd.d.ts", "README.md", "LICENSE"],
+        "peerDependencies": {"@rerun-io/web-viewer": rerun},
+    }
+)
+(pkg / "package.json").write_text(json.dumps(manifest, indent=2) + "\n")
+shutil.copy(ROOT / "README.md", pkg / "README.md")
+shutil.copy(ROOT / "LICENSE", pkg / "LICENSE")
+print(f"ulog-rrd {version} for @rerun-io/web-viewer {rerun}")

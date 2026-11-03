@@ -1,24 +1,28 @@
 [workspace]
 resolver = "2"
-members = ["crates/px4-rerun", "crates/px4-rerun-wasm", "crates/rerun-importer-ulog"]
+members = ["crates/ulog-rrd", "crates/ulog-rrd-wasm", "crates/ulog-rrd-py"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.1.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/breuerpeter/ulog-rrd"
+rust-version = "1.98"
 
 [workspace.dependencies]
-# One Rerun version for every artifact: the npm package and the wheel declare it to their consumers.
-re_chunk = "=0.40.0"
-re_log_encoding = { version = "=0.40.0", features = ["encoder"] }
-re_log_msg = "=0.40.0"
-re_log_types = "=0.40.0"
-re_sdk_types = { version = "=0.40.0", default-features = false }
+ulog-rrd = { path = "crates/ulog-rrd" }
+# One Rerun version for every artifact. The .rrd layout changes between Rerun versions, so the npm
+# package and the wheel name this version to their consumers.
+re_chunk = "=0.41.0"
+re_log_encoding = { version = "=0.41.0", features = ["encoder"] }
+re_log_msg = "=0.41.0"
+re_log_types = "=0.41.0"
+re_sdk_types = { version = "=0.41.0", default-features = false }
+re_build_info = "=0.41.0"
 yule_log = "0.4.0"
-px4-rerun = { path = "crates/px4-rerun" }
 
 [profile.release]
-opt-level = "z"
+opt-level = 3
 lto = true
 codegen-units = 1
 strip = true

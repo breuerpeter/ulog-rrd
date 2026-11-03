@@ -1,0 +1,29 @@
+[package]
+name = "ulog-rrd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "PX4 ULog to Rerun .rrd: the vehicle in 3D, its log and its time series"
+
+[features]
+# `append`: a converted log into a recording on disk. Reads the file back, so it needs the decoder,
+# which the wasm package leaves out.
+append = ["re_log_encoding/decoder"]
+
+[dependencies]
+re_build_info.workspace = true
+re_chunk.workspace = true
+re_log_encoding.workspace = true
+re_log_msg.workspace = true
+re_log_types.workspace = true
+re_sdk_types.workspace = true
+yule_log.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[dev-dependencies]
+re_log_encoding = { version = "=0.41.0", features = ["decoder", "encoder"] }
+re_sdk_types = { version = "=0.41.0", default-features = false }
