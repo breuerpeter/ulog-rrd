@@ -17,34 +17,6 @@ const VELOCITY_SCALE: f64 = AXIS_M as f64 / 10.0;
 /// over hours of nothing. Samples this far outside the log's span are dropped.
 const SLACK_US: u64 = 60_000_000;
 
-/// PX4's north, east, down → Rerun's default z-up frame: east, north, up.
-fn ned_to_enu(x: f64, y: f64, z: f64) -> [f32; 3] {
-    [y as f32, x as f32, -z as f32]
-}
-
-/// The product of two rotations, each as (w, x, y, z): `a` after `b`.
-fn qmul(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
-    let [w1, x1, y1, z1] = a;
-    let [w2, x2, y2, z2] = b;
-    [
-        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
-    ]
-}
-
-/// PX4's attitude, the rotation from the body frame (FRD) to the world (NED), as the rotation from the
-/// body frame `vehicle/body` draws in, forward-left-up, to the z-up world, east-north-up: the NED→ENU
-/// axis swap on the outside and the FRD→FLU one on the inside, each a half turn, so with the nose north
-/// the body's x points north.
-fn ned_quat_to_enu(w: f64, x: f64, y: f64, z: f64) -> Quaternion {
-    const NED_TO_ENU: [f64; 4] = [0.0, std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2, 0.0];
-    const FRD_TO_FLU: [f64; 4] = [0.0, 1.0, 0.0, 0.0];
-    let [w, x, y, z] = qmul(qmul(NED_TO_ENU, [w, x, y, z]), FRD_TO_FLU);
-    Quaternion::from_xyzw([x as f32, y as f32, z as f32, w as f32])
-}
-
 fn level(severity: u8) -> TextLogLevel {
     match severity {
         0 => TextLogLevel::CRITICAL,
@@ -85,9 +57,10 @@ fn pick<T: Copy>(values: &[T], rows: &[usize]) -> Vec<T> {
 
 pub fn visualize(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     match w.frame() {
-        // Standalone, this frame is the world.
-        None => w.static_row("", &ViewCoordinates::RFU())?,
-        // Under a prefix the caller places it.
+        // Standalone, PX4's world is the world: north, east, down, which the viewer reads as forward,
+        // right, down and so looks at with z down.
+        None => w.static_row("", &ViewCoordinates::FRD())?,
+        // Under a prefix the caller places it, and the viewer turns every row below with it.
         Some((translation, rotation)) => {
             w.static_row("", &Transform3D::from_translation_rotation(translation, Quaternion::from_xyzw(rotation)))?
         }
@@ -108,6 +81,8 @@ pub fn visualize(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
 ///
 /// `vehicle` carries the position alone and `vehicle/body` the attitude, so a view with `vehicle` as
 /// its origin follows the vehicle with the world's axes: a chase view. The trail sits in the world.
+/// PX4's attitude rotates the body (FRD) into the world (NED), which is the rotation a `Transform3D`
+/// takes, so it goes in as it is.
 fn pose(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     let (Some(pos), Some(att)) = (log.table("vehicle_local_position"), log.table("vehicle_attitude")) else {
         return Ok(());
@@ -125,7 +100,7 @@ fn pose(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
 
     w.static_row(
         "vehicle/body/frd",
-        &Arrows3D::from_vectors([[AXIS_M, 0.0, 0.0], [0.0, -AXIS_M, 0.0], [0.0, 0.0, -AXIS_M]]).with_colors([
+        &Arrows3D::from_vectors([[AXIS_M, 0.0, 0.0], [0.0, AXIS_M, 0.0], [0.0, 0.0, AXIS_M]]).with_colors([
             Color::from_rgb(255, 0, 0),
             Color::from_rgb(0, 255, 0),
             Color::from_rgb(0, 0, 255),
@@ -138,7 +113,7 @@ fn pose(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
             .with_colors([Color::from_rgb(255, 255, 255)]),
     )?;
 
-    let positions: Vec<[f32; 3]> = rows.iter().map(|&i| ned_to_enu(x[i], y[i], z[i])).collect();
+    let positions: Vec<[f32; 3]> = rows.iter().map(|&i| [x[i] as f32, y[i] as f32, z[i] as f32]).collect();
     w.columns(
         "vehicle",
         &times,
@@ -157,7 +132,7 @@ fn pose(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
             while j + 1 < att.timestamps.len() && att.timestamps[j + 1].abs_diff(ts) <= att.timestamps[j].abs_diff(ts) {
                 j += 1;
             }
-            ned_quat_to_enu(q[0][j], q[1][j], q[2][j], q[3][j])
+            Quaternion::from_xyzw([q[1][j] as f32, q[2][j] as f32, q[3][j] as f32, q[0][j] as f32])
         })
         .collect();
     w.columns(
@@ -167,8 +142,9 @@ fn pose(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     )?;
 
     if let (Some(vx), Some(vy), Some(vz)) = (pos.get("vx"), pos.get("vy"), pos.get("vz")) {
-        let vectors =
-            rows.iter().map(|&i| ned_to_enu(vx[i] * VELOCITY_SCALE, vy[i] * VELOCITY_SCALE, vz[i] * VELOCITY_SCALE));
+        let vectors = rows
+            .iter()
+            .map(|&i| [vx[i] * VELOCITY_SCALE, vy[i] * VELOCITY_SCALE, vz[i] * VELOCITY_SCALE].map(|v| v as f32));
         let labels = rows.iter().map(|&i| format!("{:.1} m/s", (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]).sqrt()));
         w.static_row(
             "vehicle/velocity",
@@ -268,7 +244,7 @@ fn home(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
         "home",
         &pick(&home.timestamps, &rows),
         Points3D::update_fields()
-            .with_positions(rows.iter().map(|&i| ned_to_enu(x[i], y[i], z[i])))
+            .with_positions(rows.iter().map(|&i| [x[i] as f32, y[i] as f32, z[i] as f32]))
             .columns_of_unit_batches()
             .map_err(err)?,
     )
@@ -282,7 +258,7 @@ fn setpoint(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     if rows.is_empty() {
         return Ok(());
     }
-    let positions: Vec<[f32; 3]> = rows.iter().map(|&i| ned_to_enu(x[i], y[i], z[i])).collect();
+    let positions: Vec<[f32; 3]> = rows.iter().map(|&i| [x[i] as f32, y[i] as f32, z[i] as f32]).collect();
     w.static_row("setpoint", &marker(Color::from_unmultiplied_rgba(255, 255, 255, 120), 3.0, false))?;
     w.columns(
         "setpoint",
@@ -294,15 +270,15 @@ fn setpoint(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     if rows.is_empty() {
         return Ok(());
     }
-    // Yaw is clockwise from north in NED; the arrow is as long as the body axes.
-    let fwd = rows.iter().map(|&i| ned_to_enu(yaw[i].cos() * AXIS_M as f64, yaw[i].sin() * AXIS_M as f64, 0.0));
+    // Yaw is clockwise from north; the arrow is as long as the body axes.
+    let fwd = rows.iter().map(|&i| [yaw[i].cos() as f32 * AXIS_M, yaw[i].sin() as f32 * AXIS_M, 0.0]);
     w.static_row("setpoint/yaw", &Arrows3D::update_fields().with_colors([Color::from_rgb(255, 0, 0)]))?;
     w.columns(
         "setpoint/yaw",
         &pick(&sp.timestamps, &rows),
         Arrows3D::update_fields()
             .with_vectors(fwd)
-            .with_origins(rows.iter().map(|&i| ned_to_enu(x[i], y[i], z[i])))
+            .with_origins(rows.iter().map(|&i| [x[i] as f32, y[i] as f32, z[i] as f32]))
             .columns_of_unit_batches()
             .map_err(err)?,
     )
@@ -345,10 +321,7 @@ fn mission(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
         "mission_item",
         &pick(&items.timestamps, &rows),
         Points3D::update_fields()
-            .with_positions(rows.iter().map(|&i| {
-                let [n, e, d] = local(i);
-                ned_to_enu(n, e, d)
-            }))
+            .with_positions(rows.iter().map(|&i| local(i).map(|v| v as f32)))
             .with_labels(rows.iter().map(|&i| nav_cmd_label(cmd[i])))
             .columns_of_unit_batches()
             .map_err(err)?,
@@ -394,33 +367,4 @@ fn scalars(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
         )?;
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `v` rotated by the quaternion, (x, y, z, w) as Rerun keeps it.
-    fn rotate(q: Quaternion, v: [f64; 3]) -> [f64; 3] {
-        let [x, y, z, w] = q.0.map(f64::from);
-        let r = qmul(qmul([w, x, y, z], [0.0, v[0], v[1], v[2]]), [w, -x, -y, -z]);
-        [r[1], r[2], r[3]]
-    }
-
-    fn close(a: [f64; 3], b: [f64; 3]) -> bool {
-        a.iter().zip(b).all(|(p, q)| (p - q).abs() < 1e-6)
-    }
-
-    #[test]
-    fn the_body_axes_land_where_px4_points_them() {
-        // Nose north, level: body forward is north, body right is east, body down is down.
-        let level = ned_quat_to_enu(1.0, 0.0, 0.0, 0.0);
-        assert!(close(rotate(level, [1.0, 0.0, 0.0]), [0.0, 1.0, 0.0]), "forward");
-        assert!(close(rotate(level, [0.0, -1.0, 0.0]), [1.0, 0.0, 0.0]), "right, drawn as -y");
-        assert!(close(rotate(level, [0.0, 0.0, -1.0]), [0.0, 0.0, -1.0]), "down, drawn as -z");
-        // A quarter turn right about down, PX4's positive yaw: the nose points east.
-        let s = std::f64::consts::FRAC_1_SQRT_2;
-        let east = ned_quat_to_enu(s, 0.0, 0.0, s);
-        assert!(close(rotate(east, [1.0, 0.0, 0.0]), [1.0, 0.0, 0.0]), "yawed forward");
-    }
 }

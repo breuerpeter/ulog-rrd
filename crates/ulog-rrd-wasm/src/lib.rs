@@ -35,8 +35,8 @@ pub struct Options {
     pub time_offset_us: Option<f64>,
     /// Log every numeric field of every topic as a series under `timeseries/`.
     pub scalars: Option<bool>,
-    /// Where the ULog's frame sits in the caller's world, logged as the transform of the prefix root:
-    /// a translation `[x, y, z]` in metres and a rotation quaternion `[x, y, z, w]`.
+    /// Where PX4's local frame, north-east-down, sits in the caller's world, logged as the transform of
+    /// the prefix root: a translation `[x, y, z]` in metres and a rotation quaternion `[x, y, z, w]`.
     pub translation: Option<Vec<f32>>,
     pub rotation: Option<Vec<f32>>,
     /// Append the blueprint, so the viewer opens with the vehicle beside the whole flight and the

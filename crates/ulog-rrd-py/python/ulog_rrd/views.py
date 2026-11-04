@@ -26,13 +26,14 @@ def views(prefix: str = "") -> list[rrb.View | rrb.Container]:
     contents = [f"+ {root}/**", f"- {root}/log", f"- {root}/timeseries/**"]
     return [
         rrb.Horizontal(
-            # The origin moves with the vehicle and keeps the world's axes, so the eye stays behind it.
+            # The origin moves with the vehicle and keeps the world's axes, so the eye stays behind it:
+            # south-west of it and above, in PX4's north-east-down world.
             rrb.Spatial3DView(
                 name="Vehicle",
                 origin=f"{root}/vehicle",
                 contents=contents,
                 eye_controls=rrb.archetypes.EyeControls3D(
-                    kind="Orbital", position=[-1.2, -1.2, 0.8], look_target=[0.0, 0.0, 0.0], eye_up=[0.0, 0.0, 1.0]
+                    kind="Orbital", position=[-1.2, -1.2, -0.8], look_target=[0.0, 0.0, 0.0], eye_up=[0.0, 0.0, -1.0]
                 ),
             ),
             rrb.Spatial3DView(name="Flight", origin=root or "/", contents=contents),

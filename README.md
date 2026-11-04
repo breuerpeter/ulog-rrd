@@ -30,9 +30,11 @@ Each path sits under the `entity_path_prefix` the caller gives, or at the root.
 | `log` | PX4's text messages, a `TextLog` each |
 | `timeseries/<topic>` | Every numeric field of every topic, one series per field (`scalars`) |
 
-Positions are in Rerun's default z-up frame: east, north, up. Without a prefix the root declares
-that frame. Under a prefix the caller places the subtree in its own world with `translation` and
-`rotation`, logged once as the transform of the prefix root.
+Every row keeps PX4's own frames: positions in its local world, north-east-down, and the body
+frame forward-right-down. Nothing is converted per sample. Without a prefix the root declares that
+world, so the viewer looks at it with z down. Under a prefix the caller places the subtree in its
+own world with `translation` and `rotation`, one transform at the prefix root that the viewer
+applies to every row below: for a z-up world with x north, the rotation is a half turn about x.
 
 ## Browser
 
@@ -66,7 +68,7 @@ ulog_rrd.append(
     application_id="nexus",
     recording_id="nexus",
     entity_path_prefix="px4_sitl/logs",
-    rotation=(0.0, 0.0, -0.7071068, 0.7071068),
+    rotation=(1.0, 0.0, 0.0, 0.0),
 )
 
 # The blueprint views of what was logged, for a blueprint of your own

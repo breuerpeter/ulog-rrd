@@ -40,14 +40,15 @@ def convert(
         application_id: The application the recording belongs to; Rerun applies a blueprint by it.
         recording_id: The recording the rows join; ``None`` makes one up.
         entity_path_prefix: Put before every entity path, such as ``px4_sitl/logs``; ``None`` puts
-            the rows at the root, with Rerun's z-up frame declared there.
+            the rows at the root, with PX4's north-east-down world declared there.
         timeline: The duration timeline the rows sit on.
         time_offset_us: Subtracted from every ULog timestamp, in microseconds.
         scalars: Log every numeric field of every topic as a series under ``timeseries/``.
-        translation: Where the ULog's frame, east-north-up, sits in the caller's world, in metres,
-            logged as the transform of the prefix root. Needs a prefix.
-        rotation: The quaternion ``(x, y, z, w)`` rotating the ULog's frame into the caller's world,
-            logged with ``translation``.
+        translation: Where PX4's local frame, north-east-down, sits in the caller's world, in metres,
+            logged as the transform of the prefix root, which the viewer applies to every row below.
+            Needs a prefix.
+        rotation: The quaternion ``(x, y, z, w)`` rotating PX4's frame into the caller's world, logged
+            with ``translation``: for a z-up world with x north, a half turn about x, ``(1, 0, 0, 0)``.
 
     Returns:
         The ``.rrd`` bytes, which a viewer opens.

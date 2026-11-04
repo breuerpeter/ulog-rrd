@@ -89,7 +89,7 @@ fn rows(chunks: &BTreeMap<String, Vec<Chunk>>, path: &str) -> usize {
 }
 
 #[test]
-fn the_vehicle_flies_in_the_z_up_frame_and_the_stray_sample_is_dropped() {
+fn the_vehicle_flies_in_px4s_frame_and_the_stray_sample_is_dropped() {
     let rrd = convert(&flight(), &Options::default()).expect("convert");
     let chunks = chunks(&rrd);
     assert_eq!(rows(&chunks, "/vehicle"), 3, "{:?}", chunks.keys());
@@ -101,14 +101,14 @@ fn the_vehicle_flies_in_the_z_up_frame_and_the_stray_sample_is_dropped() {
     assert!(chunks.contains_key("/"), "the root declares the frame");
     assert!(!chunks.contains_key("/timeseries/vehicle_local_position"), "scalars are opt in");
 
-    // North 1, east 2, down -3 is east 2, north 1, up 3; its time is ULog time.
+    // North 1, east 2, down -3 stays as it is; its time is ULog time.
     let vehicle = &chunks["/vehicle"][0];
     let time = vehicle.timelines().values().next().expect("one timeline");
     assert_eq!(time.timeline().name().as_str(), "time");
     assert_eq!(time.times_raw()[0], 1_000_000_000);
     let translation = vehicle.components().0.values().next().expect("translation").list_array.clone();
     let first = re_sdk_types::external::arrow::array::Array::slice(&translation, 0, 1);
-    assert!(format!("{first:?}").replace(['\n', ' '], "").contains("[2.0,1.0,3.0,]"), "{first:?}");
+    assert!(format!("{first:?}").replace(['\n', ' '], "").contains("[1.0,2.0,-3.0,]"), "{first:?}");
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn a_prefix_moves_every_entity_and_carries_the_frame() {
         timeline: "sim".into(),
         time_offset_us: 1_000_000,
         scalars: true,
-        rotation: Some([0.0, 0.0, -0.707, 0.707]),
+        rotation: Some([1.0, 0.0, 0.0, 0.0]),
         ..Options::default()
     };
     let chunks = chunks(&convert(&flight(), &opts).expect("convert"));

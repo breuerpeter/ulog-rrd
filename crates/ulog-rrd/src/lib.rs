@@ -25,10 +25,12 @@
 //! | `log` | PX4's text messages, a `TextLog` each |
 //! | `timeseries/<topic>` | Every numeric field of every topic, one series per field (opt in) |
 //!
-//! Positions are in the z-up frame Rerun draws by default: east, north, up. PX4's north, east,
-//! down becomes that by swapping x and y and flipping z. Without a prefix the recording's root
-//! declares that frame; under a prefix the caller places the subtree in its own world through
-//! [`Options::translation`] and [`Options::rotation`].
+//! Every row keeps PX4's own frames: positions in its local world, north-east-down, and the body
+//! frame forward-right-down, which the attitude rotates into the world as `Transform3D` expects. No
+//! sample is converted. Without a prefix the recording's root declares that world, so the viewer
+//! looks at it with z down. Under a prefix the caller places the subtree in its own world with one
+//! transform at the prefix root, [`Options::translation`] and [`Options::rotation`], which the viewer
+//! applies to every row below.
 
 mod parse;
 mod viz;
@@ -60,9 +62,9 @@ pub struct Options {
     pub time_offset_us: i64,
     /// Log every numeric field of every topic as a series under `timeseries/`.
     pub scalars: bool,
-    /// Where the ULog's frame sits in the caller's world: a translation in metres and a rotation
-    /// quaternion (x, y, z, w), logged once as the transform of the prefix root. `None` is identity.
-    /// Needs a prefix: at the root there is no entity to carry it.
+    /// Where PX4's local frame, north-east-down, sits in the caller's world: a translation in metres and
+    /// a rotation quaternion (x, y, z, w), logged once as the transform of the prefix root. `None` is
+    /// identity. Needs a prefix: at the root there is no entity to carry it.
     pub translation: Option<[f32; 3]>,
     pub rotation: Option<[f32; 4]>,
 }
