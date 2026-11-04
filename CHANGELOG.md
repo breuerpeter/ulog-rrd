@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0](https://github.com/breuerpeter/ulog-rrd/compare/v0.1.0...v0.2.0) (2026-11-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* the rotation and translation options now place PX4's north-east-down frame, not an east-north-up one; a z-up world with x north takes a half turn about x, (1, 0, 0, 0).
+
+### Features
+
+* rows keep PX4's frames, and one transform at the root places them ([0f5c3f6](https://github.com/breuerpeter/ulog-rrd/commit/0f5c3f6092327bd9c7bc23b135085c859f7dfdc1))
+
+
+### Bug Fixes
+
+* the body axes point where PX4 points them ([6313754](https://github.com/breuerpeter/ulog-rrd/commit/63137540179de74b2723955e792a350940ae3392))
+
 ## 0.1.0 (2026-11-03)
 
 

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/ulog-rrd", "crates/ulog-rrd-wasm", "crates/ulog-rrd-py"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/breuerpeter/ulog-rrd"
