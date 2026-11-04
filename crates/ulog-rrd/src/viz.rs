@@ -22,10 +22,27 @@ fn ned_to_enu(x: f64, y: f64, z: f64) -> [f32; 3] {
     [y as f32, x as f32, -z as f32]
 }
 
-/// PX4's attitude, which rotates world (NED) into body (FRD), as the body-to-world rotation Rerun
-/// takes, in the z-up frame: conjugate, then swap x and y and flip z.
+/// The product of two rotations, each as (w, x, y, z): `a` after `b`.
+fn qmul(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
+    let [w1, x1, y1, z1] = a;
+    let [w2, x2, y2, z2] = b;
+    [
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    ]
+}
+
+/// PX4's attitude, the rotation from the body frame (FRD) to the world (NED), as the rotation from the
+/// body frame `vehicle/body` draws in, forward-left-up, to the z-up world, east-north-up: the NED→ENU
+/// axis swap on the outside and the FRD→FLU one on the inside, each a half turn, so with the nose north
+/// the body's x points north.
 fn ned_quat_to_enu(w: f64, x: f64, y: f64, z: f64) -> Quaternion {
-    Quaternion::from_xyzw([-y as f32, -x as f32, z as f32, w as f32])
+    const NED_TO_ENU: [f64; 4] = [0.0, std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2, 0.0];
+    const FRD_TO_FLU: [f64; 4] = [0.0, 1.0, 0.0, 0.0];
+    let [w, x, y, z] = qmul(qmul(NED_TO_ENU, [w, x, y, z]), FRD_TO_FLU);
+    Quaternion::from_xyzw([x as f32, y as f32, z as f32, w as f32])
 }
 
 fn level(severity: u8) -> TextLogLevel {
@@ -377,4 +394,33 @@ fn scalars(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `v` rotated by the quaternion, (x, y, z, w) as Rerun keeps it.
+    fn rotate(q: Quaternion, v: [f64; 3]) -> [f64; 3] {
+        let [x, y, z, w] = q.0.map(f64::from);
+        let r = qmul(qmul([w, x, y, z], [0.0, v[0], v[1], v[2]]), [w, -x, -y, -z]);
+        [r[1], r[2], r[3]]
+    }
+
+    fn close(a: [f64; 3], b: [f64; 3]) -> bool {
+        a.iter().zip(b).all(|(p, q)| (p - q).abs() < 1e-6)
+    }
+
+    #[test]
+    fn the_body_axes_land_where_px4_points_them() {
+        // Nose north, level: body forward is north, body right is east, body down is down.
+        let level = ned_quat_to_enu(1.0, 0.0, 0.0, 0.0);
+        assert!(close(rotate(level, [1.0, 0.0, 0.0]), [0.0, 1.0, 0.0]), "forward");
+        assert!(close(rotate(level, [0.0, -1.0, 0.0]), [1.0, 0.0, 0.0]), "right, drawn as -y");
+        assert!(close(rotate(level, [0.0, 0.0, -1.0]), [0.0, 0.0, -1.0]), "down, drawn as -z");
+        // A quarter turn right about down, PX4's positive yaw: the nose points east.
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        let east = ned_quat_to_enu(s, 0.0, 0.0, s);
+        assert!(close(rotate(east, [1.0, 0.0, 0.0]), [1.0, 0.0, 0.0]), "yawed forward");
+    }
 }
