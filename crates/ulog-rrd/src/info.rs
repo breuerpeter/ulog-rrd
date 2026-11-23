@@ -7,7 +7,7 @@ use re_sdk_types::external::arrow::array::{
     ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
     StringArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
 };
-use re_sdk_types::DynamicArchetype;
+use re_sdk_types::{ComponentIdentifier, DynamicArchetype};
 
 use crate::parse::InfoValue;
 
@@ -18,6 +18,11 @@ pub const INFO_VALUE: &str = "value";
 /// The archetype of the severities beside the `TextLog` rows, and its one component.
 pub const MESSAGE: &str = "ulog_rrd.Message";
 pub const MESSAGE_SEVERITY: &str = "severity";
+
+/// The component a field of one of these archetypes is stored as, `<archetype>:<field>`.
+pub fn component(archetype: &'static str, field: &str) -> ComponentIdentifier {
+    ComponentIdentifier::from_archetype_field(archetype.into(), field)
+}
 
 /// The syslog severities of text messages, 0 (emergency) to 7 (debug), one instance each.
 pub fn severity(severities: impl Iterator<Item = u8>) -> DynamicArchetype {
