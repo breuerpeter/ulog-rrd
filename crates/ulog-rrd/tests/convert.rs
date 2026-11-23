@@ -50,6 +50,22 @@ impl Ulog {
         payload.extend_from_slice(text.as_bytes());
         self.message(b'L', &payload);
     }
+
+    /// An info message: `key` is the type and the name, as in `char[3] sys_name`.
+    fn info(&mut self, key: &str, value: &[u8]) {
+        let mut payload = vec![key.len() as u8];
+        payload.extend_from_slice(key.as_bytes());
+        payload.extend_from_slice(value);
+        self.message(b'I', &payload);
+    }
+
+    /// A multi-part info message; `is_continued` joins it to the one before it.
+    fn info_multi(&mut self, is_continued: bool, key: &str, value: &[u8]) {
+        let mut payload = vec![is_continued as u8, key.len() as u8];
+        payload.extend_from_slice(key.as_bytes());
+        payload.extend_from_slice(value);
+        self.message(b'M', &payload);
+    }
 }
 
 /// A flight of three position samples north-east-down (1, 2, -3), (2, 2, -3), (3, 2, -3) with an
@@ -86,6 +102,66 @@ fn chunks(rrd: &[u8]) -> BTreeMap<String, Vec<Chunk>> {
 
 fn rows(chunks: &BTreeMap<String, Vec<Chunk>>, path: &str) -> usize {
     chunks.get(path).map_or(0, |c| c.iter().map(Chunk::num_rows).sum())
+}
+
+/// One value of an info row, as the Arrow type of its instance says: text, a number or bytes.
+#[derive(Debug, PartialEq)]
+enum Value {
+    Text(String),
+    U32(u32),
+    I32(i32),
+    U64(u64),
+    Bytes(Vec<u8>),
+}
+
+/// The values at `path` in row order, one per instance; empty when nothing is logged there.
+fn values(chunks: &BTreeMap<String, Vec<Chunk>>, path: &str) -> Vec<Value> {
+    use re_sdk_types::external::arrow::array::{
+        Array, BinaryArray, FixedSizeListArray, Int32Array, ListArray, StringArray, UInt32Array, UInt64Array,
+        UInt8Array,
+    };
+    use re_sdk_types::external::arrow::datatypes::DataType;
+
+    let mut out = Vec::new();
+    for chunk in chunks.get(path).into_iter().flatten() {
+        let columns: Vec<_> = chunk.components().0.values().collect();
+        assert_eq!(columns.len(), 1, "an info row is one component: {path}");
+        let rows = &columns[0].list_array;
+        for row in 0..rows.len() {
+            let instances = rows.value(row);
+            let any = instances.as_any();
+            match instances.data_type() {
+                DataType::Utf8 => out
+                    .extend(any.downcast_ref::<StringArray>().unwrap().iter().flatten().map(|s| Value::Text(s.into()))),
+                DataType::UInt32 => {
+                    out.extend(any.downcast_ref::<UInt32Array>().unwrap().iter().flatten().map(Value::U32))
+                }
+                DataType::Int32 => {
+                    out.extend(any.downcast_ref::<Int32Array>().unwrap().iter().flatten().map(Value::I32))
+                }
+                DataType::UInt64 => {
+                    out.extend(any.downcast_ref::<UInt64Array>().unwrap().iter().flatten().map(Value::U64))
+                }
+                DataType::Binary => out.extend(
+                    any.downcast_ref::<BinaryArray>().unwrap().iter().flatten().map(|b| Value::Bytes(b.into())),
+                ),
+                DataType::List(_) => out.extend((0..instances.len()).map(|i| {
+                    let bytes = any.downcast_ref::<ListArray>().unwrap().value(i);
+                    Value::Bytes(bytes.as_any().downcast_ref::<UInt8Array>().expect("bytes").values().to_vec())
+                })),
+                DataType::FixedSizeList(..) => out.extend((0..instances.len()).map(|i| {
+                    let bytes = any.downcast_ref::<FixedSizeListArray>().unwrap().value(i);
+                    Value::Bytes(bytes.as_any().downcast_ref::<UInt8Array>().expect("bytes").values().to_vec())
+                })),
+                other => panic!("an info value of Arrow type {other} at {path}"),
+            }
+        }
+    }
+    out
+}
+
+fn text(s: &str) -> Value {
+    Value::Text(s.into())
 }
 
 #[test]
@@ -184,4 +260,112 @@ fn append_rewrites_a_recording_with_the_log_added_under_one_footer() {
     assert_eq!(stores.len(), 1, "the file says what its store is once");
     assert!(!dir.join("run.rrd.tmp").exists());
     std::fs::remove_dir_all(dir).ok();
+}
+
+/// A plain info message is held under its key with its value.
+#[test]
+fn a_plain_info_message_is_held_under_its_key() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.info("char[3] sys_name", b"PX4");
+    let chunks = chunks(&convert(&ulog.0, &Options::default()).expect("convert"));
+    assert_eq!(values(&chunks, "/info/sys_name"), [text("PX4")]);
+}
+
+/// Each ULog type keeps its type and value.
+#[test]
+fn each_info_type_keeps_its_type_and_value() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.info("char[3] sys_name", b"PX4");
+    ulog.info("uint32_t ver_sw_release", &0x0102_0300u32.to_le_bytes());
+    ulog.info("int32_t time_ref_utc", &(-3600i32).to_le_bytes());
+    ulog.info("uint8_t[3] blob", &[7, 8, 9]);
+    let chunks = chunks(&convert(&ulog.0, &Options::default()).expect("convert"));
+    let held: Vec<_> = ["sys_name", "ver_sw_release", "time_ref_utc", "blob"]
+        .into_iter()
+        .map(|key| values(&chunks, &format!("/info/{key}")))
+        .collect();
+    assert_eq!(
+        held,
+        [vec![text("PX4")], vec![Value::U32(0x0102_0300)], vec![Value::I32(-3600)], vec![Value::Bytes(vec![7, 8, 9])],]
+    );
+}
+
+/// A `uint64_t` above 2^53 keeps every digit.
+#[test]
+fn a_uint64_above_2_pow_53_keeps_every_digit() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.info("uint64_t hw_id", &9_007_199_254_740_993u64.to_le_bytes());
+    let chunks = chunks(&convert(&ulog.0, &Options::default()).expect("convert"));
+    assert_eq!(values(&chunks, "/info/hw_id"), [Value::U64(9_007_199_254_740_993)]);
+}
+
+/// A multi-part value is one value, its messages joined in order.
+#[test]
+fn a_multi_part_value_is_one_value_joined_in_order() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.info_multi(false, "uint8_t[2] metadata_events", &[1, 2]);
+    ulog.info_multi(true, "uint8_t[1] metadata_events", &[3]);
+    ulog.info_multi(true, "uint8_t[2] metadata_events", &[4, 5]);
+    let chunks = chunks(&convert(&ulog.0, &Options::default()).expect("convert"));
+    assert_eq!(values(&chunks, "/info/metadata_events"), [Value::Bytes(vec![1, 2, 3, 4, 5])]);
+}
+
+/// A key that repeats keeps each value, in log order.
+#[test]
+fn a_repeated_key_keeps_each_value_in_log_order() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.info_multi(false, "char[1] excluded_optional_topics", b"a");
+    ulog.info_multi(false, "char[1] excluded_optional_topics", b"b");
+    let chunks = chunks(&convert(&ulog.0, &Options::default()).expect("convert"));
+    assert_eq!(values(&chunks, "/info/excluded_optional_topics"), [text("a"), text("b")]);
+}
+
+/// The array length in the type does not split a key.
+#[test]
+fn the_array_length_in_the_type_does_not_split_a_key() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.info_multi(false, "char[3] k", b"abc");
+    ulog.info_multi(false, "char[5] k", b"defgh");
+    let chunks = chunks(&convert(&ulog.0, &Options::default()).expect("convert"));
+    let paths: Vec<_> = chunks.keys().map(String::as_str).filter(|k| k.starts_with("/info")).collect();
+    assert_eq!((paths, values(&chunks, "/info/k")), (vec!["/info/k"], vec![text("abc"), text("defgh")]));
+}
+
+/// An info message after the first data message is held.
+#[test]
+fn an_info_message_after_the_first_data_message_is_held() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.format("home_position:uint64_t timestamp;float x;float y;float z;");
+    ulog.subscribe(0, 0, "home_position");
+    ulog.data(0, 1_000_000, &[0.0, 0.0, 0.0]);
+    ulog.info_multi(false, "char[2] perf_counter_preflight", b"ab");
+    let chunks = chunks(&convert(&ulog.0, &Options::default()).expect("convert"));
+    assert_eq!(values(&chunks, "/info/perf_counter_preflight"), [text("ab")]);
+}
+
+/// The ULog file header's timestamp is held as one value in µs.
+#[test]
+fn the_file_headers_timestamp_is_held_in_microseconds() {
+    let chunks = chunks(&convert(&Ulog::new(1_000_000).0, &Options::default()).expect("convert"));
+    assert_eq!(values(&chunks, "/header/timestamp_us"), [Value::U64(1_000_000)]);
+}
+
+/// Info rows sit under the entity path prefix, as every row does.
+#[test]
+fn info_rows_sit_under_the_entity_path_prefix() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.info("char[3] sys_name", b"PX4");
+    let opts = Options { entity_path_prefix: Some("a/logs".into()), ..Options::default() };
+    let chunks = chunks(&convert(&ulog.0, &opts).expect("convert"));
+    assert_eq!(
+        (values(&chunks, "/a/logs/info/sys_name"), values(&chunks, "/info/sys_name")),
+        (vec![text("PX4")], vec![])
+    );
+}
+
+/// A log with no info messages still converts, with no info rows.
+#[test]
+fn a_log_with_no_info_messages_converts_with_no_info_rows() {
+    let chunks = chunks(&convert(&flight(), &Options::default()).expect("convert"));
+    assert!(!chunks.keys().any(|k| k.starts_with("/info")), "{:?}", chunks.keys());
 }
