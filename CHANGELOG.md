@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/breuerpeter/ulog-rrd/compare/v0.2.0...v0.2.1) (2026-11-23)
+
+
+### Features
+
+* **convert:** a recording holds the log's parameters ([#18](https://github.com/breuerpeter/ulog-rrd/issues/18)) ([a37709a](https://github.com/breuerpeter/ulog-rrd/commit/a37709a068f61b2f57c1527e3aac02ae1393e3b8)), closes [#8](https://github.com/breuerpeter/ulog-rrd/issues/8)
+* **read:** a recording reads back into its PX4 logs ([#14](https://github.com/breuerpeter/ulog-rrd/issues/14)) ([7dd920d](https://github.com/breuerpeter/ulog-rrd/commit/7dd920deb7e98d4e91a3d8870b6d9073aa2c0eda)), closes [#9](https://github.com/breuerpeter/ulog-rrd/issues/9)
+
 ## [0.2.0](https://github.com/breuerpeter/ulog-rrd/compare/v0.1.0...v0.2.0) (2026-11-04)
 
 
