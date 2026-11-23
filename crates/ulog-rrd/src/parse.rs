@@ -1,11 +1,11 @@
 //! The ULog as columns: one table per topic instance, every numeric field a column of `f64`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
 
+use yule_log::builder::ULogParserBuilder;
 use yule_log::model::inst::{self, FieldValue};
 use yule_log::model::msg::UlogMessage;
-use yule_log::parser::ULogParser;
 
 use crate::{err, Error};
 
@@ -31,7 +31,65 @@ pub struct Message {
     pub text: String,
 }
 
+/// One value of an info message, in the type the ULog gave it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum InfoValue {
+    Text(String),
+    Bytes(Vec<u8>),
+    Bool(bool),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    F32(f32),
+    F64(f64),
+}
+
+impl InfoValue {
+    /// The value of a field, or `None` for an array of anything but characters and bytes, and for a
+    /// nested type: those are not held.
+    fn from_field(value: &FieldValue) -> Option<Self> {
+        Some(match value {
+            FieldValue::ScalarChar(c) => Self::Text(String::from_utf8_lossy(&[c.0]).into_owned()),
+            FieldValue::ArrayChar(chars) => {
+                let bytes: Vec<u8> = chars.iter().map(|c| c.0).collect();
+                Self::Text(String::from_utf8_lossy(&bytes).trim_end_matches('\0').to_owned())
+            }
+            FieldValue::ArrayU8(bytes) => Self::Bytes(bytes.clone()),
+            FieldValue::ScalarBool(v) => Self::Bool(*v),
+            FieldValue::ScalarU8(v) => Self::U8(*v),
+            FieldValue::ScalarU16(v) => Self::U16(*v),
+            FieldValue::ScalarU32(v) => Self::U32(*v),
+            FieldValue::ScalarU64(v) => Self::U64(*v),
+            FieldValue::ScalarI8(v) => Self::I8(*v),
+            FieldValue::ScalarI16(v) => Self::I16(*v),
+            FieldValue::ScalarI32(v) => Self::I32(*v),
+            FieldValue::ScalarI64(v) => Self::I64(*v),
+            FieldValue::ScalarF32(v) => Self::F32(*v),
+            FieldValue::ScalarF64(v) => Self::F64(*v),
+            _ => return None,
+        })
+    }
+
+    /// Joins `next`, the continuation of a multi-part value, onto this one; `false` when the two are
+    /// not both text or both bytes.
+    fn join(&mut self, next: &Self) -> bool {
+        match (self, next) {
+            (Self::Text(a), Self::Text(b)) => a.push_str(b),
+            (Self::Bytes(a), Self::Bytes(b)) => a.extend_from_slice(b),
+            _ => return false,
+        }
+        true
+    }
+}
+
 pub struct Ulog {
+    /// The info messages by key, each key's values in log order. A multi-part value is one value.
+    pub info: BTreeMap<String, Vec<InfoValue>>,
     /// By topic name, `<name>_<multi_id>` for an instance after the first.
     pub tables: HashMap<String, Table>,
     pub messages: Vec<Message>,
@@ -110,13 +168,25 @@ fn values(format: &inst::Format, out: &mut Vec<f64>) {
     }
 }
 
+/// Adds an info message to its key: a continued one joins the key's last value, any other is a new one.
+fn add_info(info: &mut BTreeMap<String, Vec<InfoValue>>, key: String, value: &FieldValue, continued: bool) {
+    let Some(value) = InfoValue::from_field(value) else { return };
+    let values = info.entry(key).or_default();
+    if continued && values.last_mut().is_some_and(|last| last.join(&value)) {
+        return;
+    }
+    values.push(value);
+}
+
 pub fn parse(bytes: &[u8]) -> Result<Ulog, Error> {
     let mut tables: HashMap<String, Table> = HashMap::new();
     let mut messages = Vec::new();
+    let mut info: BTreeMap<String, Vec<InfoValue>> = BTreeMap::new();
     let mut start_us = 0;
     let mut row = Vec::new();
-    // The parser drops the `timestamp` and `_padding` fields; `data.timestamp` keeps the time.
-    let parser = ULogParser::new(Cursor::new(bytes)).map_err(err)?;
+    // The parser drops the `timestamp` and `_padding` fields; `data.timestamp` keeps the time. It
+    // yields the file header only when asked.
+    let parser = ULogParserBuilder::new(Cursor::new(bytes)).include_header(true).build().map_err(err)?;
     for msg in parser {
         match msg.map_err(err)? {
             UlogMessage::Header(header) => start_us = header.timestamp,
@@ -148,11 +218,13 @@ pub fn parse(bytes: &[u8]) -> Result<Ulog, Error> {
                     text: s.msg,
                 });
             }
+            UlogMessage::Info(i) => add_info(&mut info, i.key, &i.value, false),
+            UlogMessage::MultiInfo(i) => add_info(&mut info, i.key, &i.value, i.is_continued),
             _ => {}
         }
     }
     let mut ends: Vec<u64> = tables.values().filter_map(|t| t.timestamps.iter().copied().max()).collect();
     ends.sort_unstable();
     let end_us = ends.get(ends.len() / 2).copied().unwrap_or(start_us);
-    Ok(Ulog { tables, messages, start_us, end_us })
+    Ok(Ulog { info, tables, messages, start_us, end_us })
 }

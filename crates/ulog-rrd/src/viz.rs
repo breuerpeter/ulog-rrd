@@ -6,7 +6,8 @@ use re_sdk_types::archetypes::{
 use re_sdk_types::components::{Color, Radius, TextLogLevel};
 use re_sdk_types::datatypes::Quaternion;
 
-use crate::parse::{Table, Ulog};
+use crate::info;
+use crate::parse::{InfoValue, Table, Ulog};
 use crate::write::Writer;
 use crate::{err, Error};
 
@@ -71,8 +72,19 @@ pub fn visualize(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     setpoint(log, w)?;
     mission(log, w)?;
     text(log, w)?;
+    header(log, w)?;
     if w.scalars() {
         scalars(log, w)?;
+    }
+    Ok(())
+}
+
+/// The log's header: its info messages, a static row each under `info/`, and the file header's
+/// timestamp.
+fn header(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
+    w.static_row("header/timestamp_us", &info::row(&[InfoValue::U64(log.start_us)]))?;
+    for (key, values) in &log.info {
+        w.static_row(&format!("info/{key}"), &info::row(values))?;
     }
     Ok(())
 }
