@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { before, test } from 'node:test'
 
 import init, { convert, Options, read } from '../pkg/ulog_rrd.js'
-import { bytes, flight, u16, u32, Ulog } from './ulog.mjs'
+import { bytes, f32s, flight, u16, u32, Ulog } from './ulog.mjs'
 
 before(async () => {
   await init({ module_or_path: await readFile(new URL('../pkg/ulog_rrd_bg.wasm', import.meta.url)) })
@@ -53,6 +53,32 @@ test('the npm reader names array fields as Pulsar does', () => {
 test("the npm reader's methods with no data return empty values and never throw", () => {
   const got = logs(flight()).map((log) => [log.getParameters(), log.getChangedParameters(), log.getParameter('X')])
   assert.deepEqual(got, [[{}, {}, undefined]])
+})
+
+test("the npm reader answers the parameters in Pulsar's shapes", () => {
+  const ulog = new Ulog(1_000_000)
+  ulog.format('home_position:uint64_t timestamp;float x;float y;float z;')
+  ulog.param('float MPC_XY_VEL_MAX', f32s(12.5))
+  ulog.subscribe(0, 0, 'home_position')
+  ulog.data(0, 1_100_000, f32s(0, 0, 0))
+  ulog.param('float MPC_XY_VEL_MAX', f32s(8))
+  const got = logs(ulog).map((log) => [
+    log.getParameter('MPC_XY_VEL_MAX'),
+    log.getParameters(),
+    log.getChangedParameters(),
+  ])
+  assert.deepEqual(got, [
+    [
+      8,
+      { MPC_XY_VEL_MAX: 8 },
+      {
+        MPC_XY_VEL_MAX: [
+          { value: 12.5, timestamp: 0 },
+          { value: 8, timestamp: 1_100_000 },
+        ],
+      },
+    ],
+  ])
 })
 
 test("the npm reader answers PX4's events in Pulsar's shape", () => {
