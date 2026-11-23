@@ -125,10 +125,12 @@ fn column(chunks: &[Chunk], component: ComponentIdentifier) -> impl Iterator<Ite
 }
 
 fn topic(name: &str, instance: u8, chunks: &[Chunk]) -> Result<Topic, Error> {
+    // A static row replaces the one before it, as in the viewer, so a log appended twice still
+    // names its fields once.
     let names: Vec<String> = column(chunks, SeriesLines::descriptor_names().component)
         .filter(|(time, _)| time.is_none())
-        .flat_map(|(_, row)| row.as_string::<i32>().iter().flatten().map(str::to_owned).collect::<Vec<_>>())
-        .collect();
+        .last()
+        .map_or_else(Vec::new, |(_, row)| row.as_string::<i32>().iter().flatten().map(str::to_owned).collect());
     let mut columns: Vec<(String, Vec<f64>)> = names.into_iter().map(|n| (n, Vec::new())).collect();
     let mut timestamps_us = Vec::new();
     for (time, row) in column(chunks, Scalars::descriptor_scalars().component) {

@@ -568,3 +568,20 @@ fn two_recordings_under_one_prefix_come_back_as_two_logs() {
         .collect();
     assert_eq!(got, [("a", Some(3)), ("b", Some(3))]);
 }
+
+/// A log appended twice to one recording under one prefix reads, its fields named once and its
+/// samples twice, since the latest static row of field names replaces the one before it.
+#[cfg(feature = "append")]
+#[test]
+fn a_log_appended_twice_names_its_fields_once() {
+    let rrd = recording_with_its_own_series("twice");
+    append_flight(&rrd, "px4_sitl/logs");
+    append_flight(&rrd, "px4_sitl/logs");
+    let got = ulog_rrd::read(&std::fs::read(&rrd).expect("read file")).map(|logs| {
+        topic(&logs, "vehicle_local_position", 0).map(|t| {
+            (t.columns.iter().map(|(name, _)| name.clone()).collect::<Vec<_>>().join(" "), t.timestamps_us.len())
+        })
+    });
+    std::fs::remove_dir_all(rrd.parent().unwrap()).ok();
+    assert_eq!(got.map_err(|e| e.0), Ok(Some(("x y z vx vy vz".to_owned(), 6))));
+}
