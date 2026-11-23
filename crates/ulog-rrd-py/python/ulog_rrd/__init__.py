@@ -13,12 +13,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ulog_rrd._ulog_rrd import RERUN_VERSION, __version__
+from ulog_rrd._ulog_rrd import RERUN_VERSION, Log, Message, Topic, __version__
 from ulog_rrd._ulog_rrd import append as _append
 from ulog_rrd._ulog_rrd import convert as _convert
+from ulog_rrd._ulog_rrd import read as _read
 from ulog_rrd.views import blueprint, views
 
-__all__ = ["RERUN_VERSION", "__version__", "append", "blueprint", "convert", "read", "views"]
+__all__ = [
+    "RERUN_VERSION",
+    "Log",
+    "Message",
+    "Topic",
+    "__version__",
+    "append",
+    "blueprint",
+    "convert",
+    "read",
+    "views",
+]
 
 
 def convert(
@@ -93,16 +105,22 @@ def append(ulog: str | Path, rrd: str | Path, *, application_id: str, recording_
     _append(Path(ulog).read_bytes(), Path(rrd), application_id=application_id, recording_id=recording_id, **options)
 
 
-def read(rrd: bytes) -> list:
+def read(rrd: bytes) -> list[Log]:
     """The PX4 logs in a recording, one per prefix: each log's topics, text messages and info.
+
+    A log is found wherever the recording holds one, under the prefix it was logged with, so a
+    recording another process wrote with a log appended reads as that log alone.
 
     Args:
         rrd: The ``.rrd`` file's bytes.
 
     Returns:
-        One log per prefix the recording holds a PX4 log under.
+        One log per prefix. Each has ``prefix``, ``topics`` (``name``, ``instance``,
+        ``timestamps_us`` and ``columns``, a dict of the fields in definition order), ``messages``
+        (``timestamp_us``, ``level`` and ``text``) and ``info``, a dict of the info messages. A
+        recording written without ``scalars`` holds no topics.
 
     Raises:
         ValueError: The bytes are not a recording this reader reads.
     """
-    return []
+    return _read(rrd)
