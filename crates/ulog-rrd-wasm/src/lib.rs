@@ -1,5 +1,5 @@
 //! ulog-rrd for the browser: ULog bytes in, `.rrd` bytes out, for the Rerun web viewer's
-//! `open_channel().send_rrd()`.
+//! `open_channel().send_rrd()`; and `.rrd` bytes back into their PX4 logs, for Pulsar's charts.
 
 use wasm_bindgen::prelude::*;
 

@@ -1,4 +1,5 @@
-"""PX4 ULog to Rerun: convert a flight log to ``.rrd`` bytes, or append it to a recording on disk.
+"""PX4 ULog to Rerun: convert a flight log to ``.rrd`` bytes, append it to a recording on disk, or
+read a recording back into its PX4 logs.
 
 The converter is Rust, shared with the npm package that pulsar runs in the browser. This package
 adds what Python callers need: appending a converted log to an ``.rrd`` another process wrote, and the
@@ -6,7 +7,8 @@ blueprint views of the entities the converter logs.
 
 The entities, under ``entity_path_prefix``: ``vehicle`` (position) with ``vehicle/body`` (attitude,
 axes, marker, magnetometers) and ``vehicle/velocity``; ``trail``, ``home``, ``setpoint``,
-``mission_item``; ``log`` (``TextLog``); and ``timeseries/<topic>`` when ``scalars`` is set.
+``mission_item``; ``log`` (``TextLog``); ``info/<key>``; ``header/timestamp_us``; and
+``timeseries/<topic>/<n>``, ``<n>`` the instance, when ``scalars`` is set.
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 PX4 ULog → Rerun `.rrd`. One Rust converter, shipped two ways:
 
 - **npm `ulog-rrd`**: wasm for the browser. [Pulsar](https://github.com/breuerpeter/pulsar) runs it
-  in a worker for *Open in Rerun*.
+  in a worker for *Open in Rerun*, and reads a recording back to chart its topics.
 - **PyPI `ulog-rrd`**: a wheel for Python. [nexus](https://github.com/breuerpeter/nexus) appends
   the PX4 SITL flight log to its own recording at teardown.
 
@@ -27,10 +27,10 @@ Each path sits under the `entity_path_prefix` the caller gives, or at the root.
 | `home` | The home position, each time PX4 sets it |
 | `setpoint`, `setpoint/yaw` | The position setpoint and its yaw |
 | `mission_item` | The current mission item, labelled with its command |
-| `log` | PX4's text messages, a `TextLog` each |
+| `log` | PX4's text messages, a `TextLog` each, with its syslog severity beside the level |
 | `info/<key>` | One of the log's info messages, static: the key's values in log order, each in its ULog type, a multi-part value joined into one |
 | `header/timestamp_us` | The ULog file header's timestamp in microseconds, static |
-| `timeseries/<topic>` | Every numeric field of every topic, one series per field (`scalars`) |
+| `timeseries/<topic>/<n>` | Every numeric field of each topic instance, `<n>` its multi id, one series per field (`scalars`) |
 
 Every row keeps PX4's own frames: positions in its local world, north-east-down, and the body
 frame forward-right-down. Nothing is converted per sample. Without a prefix the root declares that
@@ -55,6 +55,20 @@ viewer.open_channel("flight").send_rrd(rrd);
 `scalars`, `translation`, `rotation` and `blueprint`. The blueprint applies to the default
 application id only, which it names.
 
+```ts
+import init, { read } from "ulog-rrd";
+
+await init();
+for (const log of read(new Uint8Array(rrdBytes))) {
+  const { topics } = log.parseHeader(); // [{ name, multiId, messageCount, fields, arrayFields }]
+  const { timestamp, columns } = log.getTopicData("vehicle_local_position", 0); // Float64Arrays, µs
+}
+```
+
+`read` answers one log per prefix the recording holds a PX4 log under, found without being told.
+Each log has `prefix` and the methods of Pulsar's `ParserLike`, in its shapes: an array field `q[0]`
+is `q_0`. A recording holds no parameters, so the parameter methods answer empty values.
+
 ## Python
 
 ```python
@@ -75,6 +89,12 @@ ulog_rrd.append(
 
 # The blueprint views of what was logged, for a blueprint of your own
 ulog_rrd.views("px4_sitl/logs")
+
+# The PX4 logs a recording holds, one per prefix
+for log in ulog_rrd.read(open("run.rrd", "rb").read()):
+    print(log.prefix, log.info.get("sys_name"), len(log.messages))
+    for topic in log.topics:  # by name, then instance
+        print(topic.name, topic.instance, len(topic.timestamps_us), list(topic.columns))
 ```
 
 `append` writes the file anew with the converted log's chunks added under one footer, so the viewer
