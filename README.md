@@ -30,6 +30,7 @@ Each path sits under the `entity_path_prefix` the caller gives, or at the root.
 | `log` | PX4's text messages, a `TextLog` each, with its syslog severity beside the level |
 | `info/<key>` | One of the log's info messages, static: the key's values in log order, each in its ULog type, a multi-part value joined into one |
 | `header/timestamp_us` | The ULog file header's timestamp in microseconds, static |
+| `params/<name>` | Each of the log's parameters, a scalar series: its value at the start and at each change, a change timed by the last data message before it |
 | `timeseries/<topic>/<n>` | Every numeric field of each topic instance, `<n>` its multi id, one series per field (`scalars`) |
 
 Every row keeps PX4's own frames: positions in its local world, north-east-down, and the body
@@ -67,8 +68,8 @@ for (const log of read(new Uint8Array(rrdBytes))) {
 
 `read` answers one log per recording and prefix a file holds a PX4 log under, found without being
 told. Each log has `recordingId`, `prefix` and the methods of Pulsar's `ParserLike`, in its shapes:
-an array field `q[0]` is `q_0`. A recording holds no parameters, so the parameter methods answer
-empty values.
+an array field `q[0]` is `q_0`. `getParameters` and `getParameter` answer each parameter's last
+value; `getChangedParameters` answers each parameter that changed, its start value at timestamp 0.
 
 ## Python
 
