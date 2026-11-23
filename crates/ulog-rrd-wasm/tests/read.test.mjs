@@ -1,5 +1,5 @@
 // The npm package's reader, against the built package in `pkg`: each log a recording holds answers
-// Pulsar's `ParserLike` methods. Run with `node --test crates/ulog-rrd-wasm/tests/` after the build.
+// Pulsar's `ParserLike` methods. Run with `node --test crates/ulog-rrd-wasm/tests/read.test.mjs` after the build.
 
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
