@@ -186,19 +186,28 @@ impl Log {
         obj
     }
 
-    /// `{ [name]: [{ value, timestamp }] }` for each parameter that changed in flight, as Pulsar's
-    /// parser answers it: the start value at timestamp 0, then each change at its time in µs.
+    /// `{ [name]: [{ value, timestamp }] }` for each parameter that changed in flight or was first
+    /// logged in flight, as Pulsar's parser answers it: the start value at timestamp 0, then each
+    /// change at its time in µs. The recording does not say where the definitions section ends, so a
+    /// first row is the start value when it sits at the earliest time of any parameter, where every
+    /// row from the definitions section sits.
     #[wasm_bindgen(js_name = getChangedParameters)]
     pub fn get_changed_parameters(&self) -> Object {
+        let params = &self.0.params;
+        let start = params.values().filter_map(|rows| rows.first()).map(|&(time, _)| time).min();
         let obj = Object::new();
-        for (name, rows) in self.0.params.iter().filter(|(_, rows)| rows.len() > 1) {
+        for (name, rows) in params {
+            let at_start = rows.first().map(|&(time, _)| time) == start;
+            if at_start && rows.len() < 2 {
+                continue;
+            }
             let entries: Array = rows
                 .iter()
                 .enumerate()
                 .map(|(i, &(time, value))| {
                     let entry = Object::new();
                     set(&entry, "value", &JsValue::from_f64(value));
-                    set(&entry, "timestamp", &JsValue::from_f64(if i == 0 { 0.0 } else { time as f64 }));
+                    set(&entry, "timestamp", &JsValue::from_f64(if i == 0 && at_start { 0.0 } else { time as f64 }));
                     JsValue::from(entry)
                 })
                 .collect();

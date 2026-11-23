@@ -81,6 +81,31 @@ test("the npm reader answers the parameters in Pulsar's shapes", () => {
   ])
 })
 
+test('the npm reader answers a parameter first logged in flight at the time it was logged', () => {
+  const ulog = new Ulog(1_000_000)
+  ulog.format('home_position:uint64_t timestamp;float x;float y;float z;')
+  ulog.param('int32_t SYS_AUTOSTART', u32(4001))
+  ulog.subscribe(0, 0, 'home_position')
+  ulog.data(0, 1_100_000, f32s(0, 0, 0))
+  ulog.param('float LATE_ONCE', f32s(1))
+  ulog.data(0, 1_200_000, f32s(0, 0, 0))
+  ulog.param('float LATE_TWICE', f32s(2))
+  ulog.data(0, 1_300_000, f32s(0, 0, 0))
+  ulog.param('float LATE_TWICE', f32s(3))
+  assert.deepEqual(
+    logs(ulog).map((log) => log.getChangedParameters()),
+    [
+      {
+        LATE_ONCE: [{ value: 1, timestamp: 1_100_000 }],
+        LATE_TWICE: [
+          { value: 2, timestamp: 1_200_000 },
+          { value: 3, timestamp: 1_300_000 },
+        ],
+      },
+    ],
+  )
+})
+
 test("the npm reader answers PX4's events in Pulsar's shape", () => {
   const ulog = new Ulog(1_000_000)
   ulog.format('event:uint64_t timestamp;uint32_t id;uint16_t event_sequence;uint8_t[25] arguments;uint8_t log_levels;')
