@@ -90,8 +90,8 @@ impl InfoValue {
 pub struct Ulog {
     /// The info messages by key, each key's values in log order. A multi-part value is one value.
     pub info: BTreeMap<String, Vec<InfoValue>>,
-    /// By topic name, `<name>_<multi_id>` for an instance after the first.
-    pub tables: HashMap<String, Table>,
+    /// By topic name and multi id.
+    pub tables: HashMap<(String, u8), Table>,
     pub messages: Vec<Message>,
     /// The span of the log in ULog time: the header's start, and the median over the topics of the
     /// last timestamp each logged, so one topic with a stray timestamp does not stretch it.
@@ -100,8 +100,13 @@ pub struct Ulog {
 }
 
 impl Ulog {
+    /// The first instance of `topic`.
     pub fn table(&self, topic: &str) -> Option<&Table> {
-        self.tables.get(topic)
+        self.instance(topic, 0)
+    }
+
+    pub fn instance(&self, topic: &str, multi_id: u8) -> Option<&Table> {
+        self.tables.get(&(topic.to_owned(), multi_id))
     }
 }
 
@@ -179,7 +184,7 @@ fn add_info(info: &mut BTreeMap<String, Vec<InfoValue>>, key: String, value: &Fi
 }
 
 pub fn parse(bytes: &[u8]) -> Result<Ulog, Error> {
-    let mut tables: HashMap<String, Table> = HashMap::new();
+    let mut tables: HashMap<(String, u8), Table> = HashMap::new();
     let mut messages = Vec::new();
     let mut info: BTreeMap<String, Vec<InfoValue>> = BTreeMap::new();
     let mut start_us = 0;
@@ -191,10 +196,7 @@ pub fn parse(bytes: &[u8]) -> Result<Ulog, Error> {
         match msg.map_err(err)? {
             UlogMessage::Header(header) => start_us = header.timestamp,
             UlogMessage::LoggedData(data) => {
-                let topic = match data.data.multi_id_index {
-                    Some(i) if i > 0 => format!("{}_{i}", data.data.name),
-                    _ => data.data.name.to_string(),
-                };
+                let topic = (data.data.name.to_string(), data.data.multi_id_index.unwrap_or(0));
                 let table = tables.entry(topic).or_insert_with(|| {
                     let mut names = Vec::new();
                     column_names(&data.data, "", &mut names);

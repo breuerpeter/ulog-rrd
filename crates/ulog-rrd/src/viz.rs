@@ -192,13 +192,12 @@ fn mag_color(index: usize) -> Color {
 /// Each magnetometer's field in the body frame, and the samples its calibration collected.
 fn magnetometers(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     for n in 0..4 {
-        let topic = if n == 0 { "sensor_mag".to_owned() } else { format!("sensor_mag_{n}") };
-        if let Some(mag) = log.table(&topic) {
+        if let Some(mag) = log.instance("sensor_mag", n) {
             if let (Some(x), Some(y), Some(z)) = (mag.get("x"), mag.get("y"), mag.get("z")) {
                 let rows = rows(log, mag, &[x, y, z]);
                 if !rows.is_empty() {
                     let path = format!("vehicle/body/sensor_mag/{n}");
-                    w.static_row(&path, &Arrows3D::update_fields().with_colors([mag_color(n)]))?;
+                    w.static_row(&path, &Arrows3D::update_fields().with_colors([mag_color(n.into())]))?;
                     w.columns(
                         &path,
                         &pick(&mag.timestamps, &rows),
@@ -357,18 +356,19 @@ fn text(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     )
 }
 
-/// Every numeric field of every topic: one entity per topic instance with a named series per field.
+/// Every numeric field of every topic: one entity per topic instance, at its name and multi id, with
+/// a named series per field.
 /// One entity per topic rather than per field, since each row carries a row id and a timestamp,
 /// which per-field entities would repeat for every field of every message.
 fn scalars(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
-    let mut topics: Vec<(&String, &Table)> = log.tables.iter().collect();
+    let mut topics: Vec<(&(String, u8), &Table)> = log.tables.iter().collect();
     topics.sort_by(|a, b| a.0.cmp(b.0));
-    for (topic, table) in topics {
+    for ((topic, multi_id), table) in topics {
         let rows = rows(log, table, &[]);
         if rows.is_empty() || table.columns.is_empty() {
             continue;
         }
-        let path = format!("timeseries/{topic}");
+        let path = format!("timeseries/{topic}/{multi_id}");
         w.static_row(&path, &SeriesLines::new().with_names(table.columns.iter().map(|(name, _)| name.as_str())))?;
         let width = table.columns.len();
         let values = rows.iter().flat_map(|&i| table.columns.iter().map(move |(_, column)| column[i]));

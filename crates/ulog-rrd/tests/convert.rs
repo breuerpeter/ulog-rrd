@@ -200,7 +200,7 @@ fn a_prefix_moves_every_entity_and_carries_the_frame() {
     let chunks = chunks(&convert(&flight(), &opts).expect("convert"));
     assert!(chunks.keys().all(|k| k.starts_with("/px4_sitl/logs")), "{:?}", chunks.keys());
     assert_eq!(rows(&chunks, "/px4_sitl/logs"), 1, "the root's transform");
-    assert_eq!(rows(&chunks, "/px4_sitl/logs/timeseries/vehicle_local_position"), 4, "three rows and the names");
+    assert_eq!(rows(&chunks, "/px4_sitl/logs/timeseries/vehicle_local_position/0"), 4, "three rows and the names");
     let vehicle = &chunks["/px4_sitl/logs/vehicle"][0];
     let time = vehicle.timelines().values().next().expect("one timeline");
     assert_eq!(time.timeline().name().as_str(), "sim");

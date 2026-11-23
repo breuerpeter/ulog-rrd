@@ -71,7 +71,7 @@ def test_append_joins_the_files_recording_and_keeps_its_blueprint(tmp_path):
         "/px4_sitl/logs",
         "/px4_sitl/logs/vehicle",
         "/px4_sitl/logs/log",
-        "/px4_sitl/logs/timeseries/vehicle_attitude",
+        "/px4_sitl/logs/timeseries/vehicle_attitude/0",
     } <= after
     assert len([e for e in after if e.startswith("/view/")]) == len([e for e in before if e.startswith("/view/")])
     # One footer: the chunk reader, which reads the file by its footer, sees the new rows too.
