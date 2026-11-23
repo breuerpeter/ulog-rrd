@@ -23,6 +23,8 @@
 //! | `setpoint`, `setpoint/yaw` | The position setpoint and its yaw |
 //! | `mission_item` | The current mission item, labelled with its command |
 //! | `log` | PX4's text messages, a `TextLog` each |
+//! | `info/<key>` | One of the log's info messages, static: the key's values in log order, each in its ULog type, a multi-part value joined into one |
+//! | `header/timestamp_us` | The ULog file header's timestamp in microseconds, static |
 //! | `timeseries/<topic>` | Every numeric field of every topic, one series per field (opt in) |
 //!
 //! Every row keeps PX4's own frames: positions in its local world, north-east-down, and the body
@@ -32,6 +34,7 @@
 //! transform at the prefix root, [`Options::translation`] and [`Options::rotation`], which the viewer
 //! applies to every row below.
 
+mod info;
 mod parse;
 mod viz;
 mod write;
