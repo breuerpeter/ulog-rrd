@@ -66,8 +66,9 @@ for (const log of read(new Uint8Array(rrdBytes))) {
 ```
 
 `read` answers one log per recording and prefix a file holds a PX4 log under, found without being
-told. Each log has `recordingId`, `prefix` and the methods of Pulsar's `ParserLike`, in its shapes: an array field `q[0]`
-is `q_0`. A recording holds no parameters, so the parameter methods answer empty values.
+told. Each log has `recordingId`, `prefix` and the methods of Pulsar's `ParserLike`, in its shapes:
+an array field `q[0]` is `q_0`. A recording holds no parameters, so the parameter methods answer
+empty values.
 
 ## Python
 
