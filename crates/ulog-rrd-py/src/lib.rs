@@ -135,6 +135,12 @@ struct Log(ulog_rrd::Log);
 
 #[pymethods]
 impl Log {
+    /// The recording the log sits in.
+    #[getter]
+    fn recording_id(&self) -> &str {
+        &self.0.recording_id
+    }
+
     /// The entity path prefix the log sits under; `None` at the root.
     #[getter]
     fn prefix(&self) -> Option<&str> {

@@ -108,7 +108,7 @@ def append(ulog: str | Path, rrd: str | Path, *, application_id: str, recording_
 
 
 def read(rrd: bytes) -> list[Log]:
-    """The PX4 logs in a recording, one per prefix: each log's topics, text messages and info.
+    """The PX4 logs in ``.rrd`` bytes, one per recording and prefix: each log's topics, messages and info.
 
     A log is found wherever the recording holds one, under the prefix it was logged with, so a
     recording another process wrote with a log appended reads as that log alone.
@@ -117,10 +117,10 @@ def read(rrd: bytes) -> list[Log]:
         rrd: The ``.rrd`` file's bytes.
 
     Returns:
-        One log per prefix. Each has ``prefix``, ``topics`` (``name``, ``instance``,
-        ``timestamps_us`` and ``columns``, a dict of the fields in definition order), ``messages``
-        (``timestamp_us``, ``level`` and ``text``) and ``info``, a dict of the info messages. A
-        recording written without ``scalars`` holds no topics.
+        One log per recording and prefix. Each has ``recording_id``, ``prefix``, ``topics``
+        (``name``, ``instance``, ``timestamps_us`` and ``columns``, a dict of the fields in
+        definition order), ``messages`` (``timestamp_us``, ``level`` and ``text``) and ``info``, a
+        dict of the info messages. A recording written without ``scalars`` holds no topics.
 
     Raises:
         ValueError: The bytes are not a recording this reader reads.

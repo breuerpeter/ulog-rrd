@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 pub struct Log(ulog_rrd::Log);
 
-/// The PX4 logs in a recording's `.rrd` bytes, one per prefix.
+/// The PX4 logs in `.rrd` bytes, one per recording and prefix.
 #[wasm_bindgen]
 pub fn read(rrd: &[u8]) -> Result<Vec<Log>, JsError> {
     Ok(ulog_rrd::read(rrd).map_err(|e| JsError::new(&e.0))?.into_iter().map(Log).collect())
@@ -82,6 +82,12 @@ impl Log {
 
 #[wasm_bindgen]
 impl Log {
+    /// The recording the log sits in.
+    #[wasm_bindgen(getter, js_name = recordingId)]
+    pub fn recording_id(&self) -> String {
+        self.0.recording_id.clone()
+    }
+
     /// The entity path prefix the log sits under; unset at the root.
     #[wasm_bindgen(getter)]
     pub fn prefix(&self) -> Option<String> {

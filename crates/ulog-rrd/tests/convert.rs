@@ -542,3 +542,29 @@ fn the_logs_header_info_comes_back() {
     let got: Vec<_> = logs.iter().map(|log| (log.info.get("sys_name"), log.info.get("ver_sw"))).collect();
     assert_eq!(got, [(Some(&vec![InfoValue::Text("PX4".into())]), Some(&vec![InfoValue::Text("abcdef12".into())]))]);
 }
+
+/// Two recordings in one file under the same prefix come back as two logs, each with its own
+/// samples, not merged into one.
+#[test]
+fn two_recordings_under_one_prefix_come_back_as_two_logs() {
+    let rrd: Vec<u8> = ["a", "b"]
+        .into_iter()
+        .flat_map(|id| {
+            let opts = Options {
+                recording_id: Some(id.into()),
+                entity_path_prefix: Some("px4_sitl/logs".into()),
+                ..scalars()
+            };
+            convert(&flight(), &opts).expect("convert")
+        })
+        .collect();
+    let logs = ulog_rrd::read(&rrd).expect("read");
+    let got: Vec<(&str, Option<usize>)> = logs
+        .iter()
+        .map(|log| {
+            let samples = log.topics.iter().find(|t| t.name == "vehicle_local_position").map(|t| t.timestamps_us.len());
+            (log.recording_id.as_str(), samples)
+        })
+        .collect();
+    assert_eq!(got, [("a", Some(3)), ("b", Some(3))]);
+}

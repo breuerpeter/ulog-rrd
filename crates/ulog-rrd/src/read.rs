@@ -1,8 +1,9 @@
 //! A recording back into the PX4 logs it holds: each log's topics, text messages and info.
 //!
-//! A log is wherever a recording holds `header/timestamp_us`, which every conversion writes; what
-//! comes before it is the prefix the log was logged under. The rest of the recording, a blueprint
-//! or another process's entities, is left out.
+//! A file may hold several recordings, and each is read on its own. A log is wherever a recording
+//! holds `header/timestamp_us`, which every conversion writes; what comes before it is the prefix the
+//! log was logged under. The rest of the file, a blueprint or another process's entities, is left
+//! out.
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -24,6 +25,8 @@ use crate::{err, info, Error, InfoValue};
 /// One PX4 log in a recording, found under the prefix it was logged with.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Log {
+    /// The recording the log sits in.
+    pub recording_id: String,
     /// The entity path prefix the log sits under; `None` at the root.
     pub prefix: Option<String>,
     /// By name, then instance.
@@ -54,30 +57,36 @@ pub struct Message {
     pub text: String,
 }
 
-/// The PX4 logs in the recording `rrd`, one per prefix.
+/// The PX4 logs in the `.rrd` bytes `rrd`, one per recording and prefix.
 pub fn read(rrd: &[u8]) -> Result<Vec<Log>, Error> {
-    let mut entities: BTreeMap<String, Vec<Chunk>> = BTreeMap::new();
+    // By recording id, then entity path.
+    let mut recordings: BTreeMap<String, BTreeMap<String, Vec<Chunk>>> = BTreeMap::new();
     for msg in Decoder::<LogMsg>::decode_lazy(Cursor::new(rrd)) {
         if let LogMsg::ArrowMsg(store, msg) = msg.map_err(err)? {
             if store.kind() == StoreKind::Recording {
                 let chunk = Chunk::from_arrow_msg(&msg).map_err(err)?;
+                let entities = recordings.entry(store.recording_id().to_string()).or_default();
                 entities.entry(chunk.entity_path().to_string()).or_default().push(chunk);
             }
         }
     }
-    if entities.is_empty() {
+    if recordings.is_empty() {
         return Err(Error("the bytes hold no recording".to_owned()));
     }
-    entities
-        .keys()
-        .filter_map(|path| path.strip_suffix("/header/timestamp_us"))
-        .map(|base| log(&entities, base))
+    recordings
+        .iter()
+        .flat_map(|(recording_id, entities)| {
+            entities
+                .keys()
+                .filter_map(|path| path.strip_suffix("/header/timestamp_us"))
+                .map(|base| log(recording_id, entities, base))
+        })
         .collect()
 }
 
 /// The log whose entities sit under `base`, the prefix as an entity path: empty at the root, else
 /// with its leading slash.
-fn log(entities: &BTreeMap<String, Vec<Chunk>>, base: &str) -> Result<Log, Error> {
+fn log(recording_id: &str, entities: &BTreeMap<String, Vec<Chunk>>, base: &str) -> Result<Log, Error> {
     let under = |dir: &str| {
         let start = format!("{base}/{dir}/");
         entities.iter().filter_map(move |(path, chunks)| Some((path.strip_prefix(&start)?, chunks)))
@@ -97,6 +106,7 @@ fn log(entities: &BTreeMap<String, Vec<Chunk>>, base: &str) -> Result<Log, Error
         info.insert(key.to_owned(), values);
     }
     Ok(Log {
+        recording_id: recording_id.to_owned(),
         prefix: base.strip_prefix('/').map(str::to_owned),
         topics,
         messages: entities.get(&format!("{base}/log")).map_or_else(|| Ok(Vec::new()), |c| messages(c))?,
