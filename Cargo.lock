@@ -3193,7 +3193,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "ulog-rrd"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "getrandom 0.3.4",
  "re_build_info",
@@ -3207,7 +3207,7 @@ dependencies = [
 
 [[package]]
 name = "ulog-rrd-py"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pyo3",
  "ulog-rrd",
@@ -3215,8 +3215,9 @@ dependencies = [
 
 [[package]]
 name = "ulog-rrd-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "js-sys",
  "ulog-rrd",
  "wasm-bindgen",
 ]

@@ -5,6 +5,7 @@ use re_sdk_types::archetypes::{
 };
 use re_sdk_types::components::{Color, Radius, TextLogLevel};
 use re_sdk_types::datatypes::Quaternion;
+use re_sdk_types::AsComponents as _;
 
 use crate::info;
 use crate::parse::{InfoValue, Table, Ulog};
@@ -192,13 +193,12 @@ fn mag_color(index: usize) -> Color {
 /// Each magnetometer's field in the body frame, and the samples its calibration collected.
 fn magnetometers(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     for n in 0..4 {
-        let topic = if n == 0 { "sensor_mag".to_owned() } else { format!("sensor_mag_{n}") };
-        if let Some(mag) = log.table(&topic) {
+        if let Some(mag) = log.instance("sensor_mag", n) {
             if let (Some(x), Some(y), Some(z)) = (mag.get("x"), mag.get("y"), mag.get("z")) {
                 let rows = rows(log, mag, &[x, y, z]);
                 if !rows.is_empty() {
                     let path = format!("vehicle/body/sensor_mag/{n}");
-                    w.static_row(&path, &Arrows3D::update_fields().with_colors([mag_color(n)]))?;
+                    w.static_row(&path, &Arrows3D::update_fields().with_colors([mag_color(n.into())]))?;
                     w.columns(
                         &path,
                         &pick(&mag.timestamps, &rows),
@@ -340,12 +340,19 @@ fn mission(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     )
 }
 
-/// PX4's text messages.
+/// PX4's text messages, each with its syslog severity beside the level the viewer shows, since the
+/// level folds several severities into one.
 fn text(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     if log.messages.is_empty() {
         return Ok(());
     }
     let times: Vec<u64> = log.messages.iter().map(|m| m.timestamp).collect();
+    let severity = info::severity(log.messages.iter().map(|m| m.severity))
+        .as_serialized_batches()
+        .into_iter()
+        .map(|batch| batch.column_of_unit_batches())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(err)?;
     w.columns(
         "log",
         &times,
@@ -353,22 +360,24 @@ fn text(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
             .with_many_text(log.messages.iter().map(|m| m.text.as_str()))
             .with_many_level(log.messages.iter().map(|m| level(m.severity)))
             .columns_of_unit_batches()
-            .map_err(err)?,
+            .map_err(err)?
+            .chain(severity),
     )
 }
 
-/// Every numeric field of every topic: one entity per topic instance with a named series per field.
+/// Every numeric field of every topic: one entity per topic instance, at its name and multi id, with
+/// a named series per field.
 /// One entity per topic rather than per field, since each row carries a row id and a timestamp,
 /// which per-field entities would repeat for every field of every message.
 fn scalars(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
-    let mut topics: Vec<(&String, &Table)> = log.tables.iter().collect();
+    let mut topics: Vec<(&(String, u8), &Table)> = log.tables.iter().collect();
     topics.sort_by(|a, b| a.0.cmp(b.0));
-    for (topic, table) in topics {
+    for ((topic, multi_id), table) in topics {
         let rows = rows(log, table, &[]);
         if rows.is_empty() || table.columns.is_empty() {
             continue;
         }
-        let path = format!("timeseries/{topic}");
+        let path = format!("timeseries/{topic}/{multi_id}");
         w.static_row(&path, &SeriesLines::new().with_names(table.columns.iter().map(|(name, _)| name.as_str())))?;
         let width = table.columns.len();
         let values = rows.iter().flat_map(|&i| table.columns.iter().map(move |(_, column)| column[i]));

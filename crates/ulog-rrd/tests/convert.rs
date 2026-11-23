@@ -200,7 +200,7 @@ fn a_prefix_moves_every_entity_and_carries_the_frame() {
     let chunks = chunks(&convert(&flight(), &opts).expect("convert"));
     assert!(chunks.keys().all(|k| k.starts_with("/px4_sitl/logs")), "{:?}", chunks.keys());
     assert_eq!(rows(&chunks, "/px4_sitl/logs"), 1, "the root's transform");
-    assert_eq!(rows(&chunks, "/px4_sitl/logs/timeseries/vehicle_local_position"), 4, "three rows and the names");
+    assert_eq!(rows(&chunks, "/px4_sitl/logs/timeseries/vehicle_local_position/0"), 4, "three rows and the names");
     let vehicle = &chunks["/px4_sitl/logs/vehicle"][0];
     let time = vehicle.timelines().values().next().expect("one timeline");
     assert_eq!(time.timeline().name().as_str(), "sim");
@@ -368,4 +368,220 @@ fn info_rows_sit_under_the_entity_path_prefix() {
 fn a_log_with_no_info_messages_converts_with_no_info_rows() {
     let chunks = chunks(&convert(&flight(), &Options::default()).expect("convert"));
     assert!(!chunks.keys().any(|k| k.starts_with("/info")), "{:?}", chunks.keys());
+}
+
+// The reader: a recording back into the PX4 logs it holds.
+
+fn scalars() -> Options {
+    Options { scalars: true, ..Options::default() }
+}
+
+/// The topic `name`, instance `instance`, in any log `logs` answer.
+fn topic<'a>(logs: &'a [ulog_rrd::Log], name: &str, instance: u8) -> Option<&'a ulog_rrd::Topic> {
+    logs.iter().flat_map(|log| &log.topics).find(|t| t.name == name && t.instance == instance)
+}
+
+/// Each topic comes back with its field names in definition order, one value per field per sample,
+/// and each sample's ULog time.
+#[test]
+fn each_topic_comes_back_with_its_fields_values_and_ulog_times() {
+    let logs = ulog_rrd::read(&convert(&flight(), &scalars()).expect("convert")).expect("read");
+    let got = topic(&logs, "vehicle_local_position", 0).map(|t| {
+        let names: Vec<&str> = t.columns.iter().map(|(name, _)| name.as_str()).collect();
+        (names, t.timestamps_us.clone(), t.columns[0].1.clone())
+    });
+    assert_eq!(
+        got,
+        Some((vec!["x", "y", "z", "vx", "vy", "vz"], vec![1_000_000, 1_100_000, 1_200_000], vec![1.0, 2.0, 3.0]))
+    );
+}
+
+/// Two instances of a topic come back as one name with instances 0 and 1, and
+/// `actuator_controls_status_1` comes back under that name as instance 0.
+#[test]
+fn an_instance_comes_back_as_its_name_and_multi_id() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.format("sensor_mag:uint64_t timestamp;float x;");
+    ulog.format("actuator_controls_status_1:uint64_t timestamp;float x;");
+    ulog.subscribe(0, 0, "sensor_mag");
+    ulog.subscribe(1, 1, "sensor_mag");
+    ulog.subscribe(2, 0, "actuator_controls_status_1");
+    for msg_id in 0..3 {
+        ulog.data(msg_id, 1_000_000, &[1.0]);
+        ulog.data(msg_id, 1_100_000, &[2.0]);
+    }
+    let logs = ulog_rrd::read(&convert(&ulog.0, &scalars()).expect("convert")).expect("read");
+    let mut got: Vec<(&str, u8)> =
+        logs.iter().flat_map(|log| &log.topics).map(|t| (t.name.as_str(), t.instance)).collect();
+    got.sort();
+    assert_eq!(got, [("actuator_controls_status_1", 0), ("sensor_mag", 0), ("sensor_mag", 1)]);
+}
+
+/// A recording holds each topic's series at `timeseries/<name>/<n>`, instance 0 included.
+#[test]
+fn a_topics_series_sit_at_its_name_and_instance() {
+    let chunks = chunks(&convert(&flight(), &scalars()).expect("convert"));
+    assert_eq!(
+        (
+            rows(&chunks, "/timeseries/vehicle_local_position/0") > 0,
+            rows(&chunks, "/timeseries/vehicle_local_position")
+        ),
+        (true, 0)
+    );
+}
+
+/// A recording another process wrote, with a series of its own at `sim/speed`, in a fresh directory
+/// named for `test`.
+#[cfg(feature = "append")]
+fn recording_with_its_own_series(test: &str) -> std::path::PathBuf {
+    use re_chunk::{RowId, TimePoint};
+    use re_log_encoding::Encoder;
+    use re_log_msg::{SetStoreInfo, StoreInfo, StoreSource};
+    use re_log_types::StoreId;
+    use re_sdk_types::archetypes::Scalars;
+
+    let store_id = StoreId::recording("app", "run");
+    let info = StoreInfo::new(store_id.clone(), StoreSource::Unknown);
+    let chunk = Chunk::builder("sim/speed")
+        .with_archetype(RowId::new(), TimePoint::default(), &Scalars::single(1.0))
+        .build()
+        .expect("chunk");
+    let file = Encoder::encode(
+        [
+            LogMsg::SetStoreInfo(SetStoreInfo { row_id: *RowId::new(), info }),
+            LogMsg::ArrowMsg(store_id, chunk.to_arrow_msg().expect("arrow")),
+        ]
+        .into_iter()
+        .map(Ok),
+    )
+    .expect("encode");
+    let dir = std::env::temp_dir().join(format!("ulog-rrd-{test}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("dir");
+    let rrd = dir.join("run.rrd");
+    std::fs::write(&rrd, file).expect("write");
+    rrd
+}
+
+/// `flight()` appended to the recording at `rrd` under `prefix`, with its series.
+#[cfg(feature = "append")]
+fn append_flight(rrd: &std::path::Path, prefix: &str) {
+    let opts = Options {
+        application_id: "app".into(),
+        recording_id: Some("run".into()),
+        entity_path_prefix: Some(prefix.into()),
+        scalars: true,
+        ..Options::default()
+    };
+    ulog_rrd::append(&flight(), &opts, rrd).expect("append");
+}
+
+/// The reader finds the prefix on its own and answers only the PX4 topics under it.
+#[cfg(feature = "append")]
+#[test]
+fn the_reader_finds_the_prefix_and_answers_only_its_topics() {
+    let rrd = recording_with_its_own_series("prefix");
+    append_flight(&rrd, "px4_sitl/logs");
+    let logs = ulog_rrd::read(&std::fs::read(&rrd).expect("read file")).expect("read");
+    std::fs::remove_dir_all(rrd.parent().unwrap()).ok();
+    let got: Vec<(Option<&str>, Vec<&str>)> =
+        logs.iter().map(|log| (log.prefix.as_deref(), log.topics.iter().map(|t| t.name.as_str()).collect())).collect();
+    assert_eq!(got, [(Some("px4_sitl/logs"), vec!["home_position", "vehicle_attitude", "vehicle_local_position"])]);
+}
+
+/// Two logs under two prefixes come back as two logs, each with its own topics.
+#[cfg(feature = "append")]
+#[test]
+fn two_logs_under_two_prefixes_come_back_as_two_logs() {
+    let rrd = recording_with_its_own_series("two-prefixes");
+    append_flight(&rrd, "a/logs");
+    append_flight(&rrd, "b/logs");
+    let logs = ulog_rrd::read(&std::fs::read(&rrd).expect("read file")).expect("read");
+    std::fs::remove_dir_all(rrd.parent().unwrap()).ok();
+    let mut got: Vec<(Option<&str>, bool)> = logs
+        .iter()
+        .map(|log| (log.prefix.as_deref(), log.topics.iter().any(|t| t.name == "vehicle_local_position")))
+        .collect();
+    got.sort();
+    assert_eq!(got, [(Some("a/logs"), true), (Some("b/logs"), true)]);
+}
+
+/// A recording with no series comes back with no topics and no error: the log is there, with its
+/// messages and info, and no topics.
+#[test]
+fn a_recording_with_no_series_comes_back_with_no_topics() {
+    let got = ulog_rrd::read(&convert(&flight(), &Options::default()).expect("convert"))
+        .map(|logs| logs.iter().map(|log| log.topics.len()).collect::<Vec<_>>())
+        .map_err(|e| e.0);
+    assert_eq!(got, Ok(vec![0]));
+}
+
+/// Bytes that are not a recording are an error, not a panic.
+#[test]
+fn bytes_that_are_not_a_recording_are_an_error() {
+    assert!(ulog_rrd::read(b"garbage").is_err());
+}
+
+/// PX4's text messages come back with time, level and text.
+#[test]
+fn text_messages_come_back_with_time_level_and_text() {
+    let logs = ulog_rrd::read(&convert(&flight(), &Options::default()).expect("convert")).expect("read");
+    let got: Vec<(i64, u8, &str)> =
+        logs.iter().flat_map(|log| &log.messages).map(|m| (m.timestamp_us, m.level, m.text.as_str())).collect();
+    assert_eq!(got, [(1_050_000, 4, "[commander] Takeoff detected")]);
+}
+
+/// The log's header info comes back.
+#[test]
+fn the_logs_header_info_comes_back() {
+    use ulog_rrd::InfoValue;
+
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.info("char[3] sys_name", b"PX4");
+    ulog.info("char[8] ver_sw", b"abcdef12");
+    let logs = ulog_rrd::read(&convert(&ulog.0, &Options::default()).expect("convert")).expect("read");
+    let got: Vec<_> = logs.iter().map(|log| (log.info.get("sys_name"), log.info.get("ver_sw"))).collect();
+    assert_eq!(got, [(Some(&vec![InfoValue::Text("PX4".into())]), Some(&vec![InfoValue::Text("abcdef12".into())]))]);
+}
+
+/// Two recordings in one file under the same prefix come back as two logs, each with its own
+/// samples, not merged into one.
+#[test]
+fn two_recordings_under_one_prefix_come_back_as_two_logs() {
+    let rrd: Vec<u8> = ["a", "b"]
+        .into_iter()
+        .flat_map(|id| {
+            let opts = Options {
+                recording_id: Some(id.into()),
+                entity_path_prefix: Some("px4_sitl/logs".into()),
+                ..scalars()
+            };
+            convert(&flight(), &opts).expect("convert")
+        })
+        .collect();
+    let logs = ulog_rrd::read(&rrd).expect("read");
+    let got: Vec<(&str, Option<usize>)> = logs
+        .iter()
+        .map(|log| {
+            let samples = log.topics.iter().find(|t| t.name == "vehicle_local_position").map(|t| t.timestamps_us.len());
+            (log.recording_id.as_str(), samples)
+        })
+        .collect();
+    assert_eq!(got, [("a", Some(3)), ("b", Some(3))]);
+}
+
+/// A log appended twice to one recording under one prefix reads, its fields named once and its
+/// samples twice, since the latest static row of field names replaces the one before it.
+#[cfg(feature = "append")]
+#[test]
+fn a_log_appended_twice_names_its_fields_once() {
+    let rrd = recording_with_its_own_series("twice");
+    append_flight(&rrd, "px4_sitl/logs");
+    append_flight(&rrd, "px4_sitl/logs");
+    let got = ulog_rrd::read(&std::fs::read(&rrd).expect("read file")).map(|logs| {
+        topic(&logs, "vehicle_local_position", 0).map(|t| {
+            (t.columns.iter().map(|(name, _)| name.clone()).collect::<Vec<_>>().join(" "), t.timestamps_us.len())
+        })
+    });
+    std::fs::remove_dir_all(rrd.parent().unwrap()).ok();
+    assert_eq!(got.map_err(|e| e.0), Ok(Some(("x y z vx vy vz".to_owned(), 6))));
 }

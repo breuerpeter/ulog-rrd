@@ -1,5 +1,5 @@
-//! An info value as a row: one component of native Arrow values, so a reader gets each value back in
-//! the type the ULog gave it.
+//! The rows ulog-rrd defines itself, of native Arrow values, so a reader gets each value back in the
+//! type the ULog gave it: an info value, and a text message's severity.
 
 use std::sync::Arc;
 
@@ -7,14 +7,33 @@ use re_sdk_types::external::arrow::array::{
     ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
     StringArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
 };
-use re_sdk_types::DynamicArchetype;
+use re_sdk_types::{ComponentIdentifier, DynamicArchetype};
 
 use crate::parse::InfoValue;
+
+/// The archetype of an info row, and its one component.
+pub const INFO: &str = "ulog_rrd.Info";
+pub const INFO_VALUE: &str = "value";
+
+/// The archetype of the severities beside the `TextLog` rows, and its one component.
+pub const MESSAGE: &str = "ulog_rrd.Message";
+pub const MESSAGE_SEVERITY: &str = "severity";
+
+/// The component a field of one of these archetypes is stored as, `<archetype>:<field>`.
+pub fn component(archetype: &'static str, field: &str) -> ComponentIdentifier {
+    ComponentIdentifier::from_archetype_field(archetype.into(), field)
+}
+
+/// The syslog severities of text messages, 0 (emergency) to 7 (debug), one instance each.
+pub fn severity(severities: impl Iterator<Item = u8>) -> DynamicArchetype {
+    DynamicArchetype::new(MESSAGE)
+        .with_component_from_data(MESSAGE_SEVERITY, Arc::new(UInt8Array::from_iter_values(severities)))
+}
 
 /// The row for one key's values: an instance per value. A key's values share one type; one of another
 /// type, which a log does not write, is left out.
 pub fn row(values: &[InfoValue]) -> DynamicArchetype {
-    DynamicArchetype::new("ulog_rrd.Info").with_component_from_data("value", array(values))
+    DynamicArchetype::new(INFO).with_component_from_data(INFO_VALUE, array(values))
 }
 
 fn array(values: &[InfoValue]) -> ArrayRef {

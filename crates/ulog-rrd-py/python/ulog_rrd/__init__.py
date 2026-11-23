@@ -1,4 +1,5 @@
-"""PX4 ULog to Rerun: convert a flight log to ``.rrd`` bytes, or append it to a recording on disk.
+"""PX4 ULog to Rerun: convert a flight log to ``.rrd`` bytes, append it to a recording on disk, or
+read a recording back into its PX4 logs.
 
 The converter is Rust, shared with the npm package that pulsar runs in the browser. This package
 adds what Python callers need: appending a converted log to an ``.rrd`` another process wrote, and the
@@ -6,19 +7,32 @@ blueprint views of the entities the converter logs.
 
 The entities, under ``entity_path_prefix``: ``vehicle`` (position) with ``vehicle/body`` (attitude,
 axes, marker, magnetometers) and ``vehicle/velocity``; ``trail``, ``home``, ``setpoint``,
-``mission_item``; ``log`` (``TextLog``); and ``timeseries/<topic>`` when ``scalars`` is set.
+``mission_item``; ``log`` (``TextLog``); ``info/<key>``; ``header/timestamp_us``; and
+``timeseries/<topic>/<n>``, ``<n>`` the instance, when ``scalars`` is set.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from ulog_rrd._ulog_rrd import RERUN_VERSION, __version__
+from ulog_rrd._ulog_rrd import RERUN_VERSION, Log, Message, Topic, __version__
 from ulog_rrd._ulog_rrd import append as _append
 from ulog_rrd._ulog_rrd import convert as _convert
+from ulog_rrd._ulog_rrd import read as _read
 from ulog_rrd.views import blueprint, views
 
-__all__ = ["RERUN_VERSION", "__version__", "append", "blueprint", "convert", "views"]
+__all__ = [
+    "RERUN_VERSION",
+    "Log",
+    "Message",
+    "Topic",
+    "__version__",
+    "append",
+    "blueprint",
+    "convert",
+    "read",
+    "views",
+]
 
 
 def convert(
@@ -91,3 +105,24 @@ def append(ulog: str | Path, rrd: str | Path, *, application_id: str, recording_
     if not Path(rrd).is_file():
         raise FileNotFoundError(rrd)
     _append(Path(ulog).read_bytes(), Path(rrd), application_id=application_id, recording_id=recording_id, **options)
+
+
+def read(rrd: bytes) -> list[Log]:
+    """The PX4 logs in ``.rrd`` bytes, one per recording and prefix: each log's topics, messages and info.
+
+    A log is found wherever the recording holds one, under the prefix it was logged with, so a
+    recording another process wrote with a log appended reads as that log alone.
+
+    Args:
+        rrd: The ``.rrd`` file's bytes.
+
+    Returns:
+        One log per recording and prefix. Each has ``recording_id``, ``prefix``, ``topics``
+        (``name``, ``instance``, ``timestamps_us`` and ``columns``, a dict of the fields in
+        definition order), ``messages`` (``timestamp_us``, ``level`` and ``text``) and ``info``, a
+        dict of the info messages. A recording written without ``scalars`` holds no topics.
+
+    Raises:
+        ValueError: The bytes are not a recording this reader reads.
+    """
+    return _read(rrd)

@@ -30,6 +30,7 @@ jobs:
       - run: cargo install wasm-pack --locked
       - run: CARGO_PROFILE_RELEASE_OPT_LEVEL=z wasm-pack build crates/ulog-rrd-wasm --target web --release --out-dir pkg --out-name ulog_rrd
       - run: python3 scripts/package_npm.py crates/ulog-rrd-wasm/pkg
+      - run: node --test crates/ulog-rrd-wasm/tests/read.test.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: npm

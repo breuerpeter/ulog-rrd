@@ -2,7 +2,8 @@
 //!
 //! [`convert`] is the entry point: the wasm package that pulsar loads and the Python wheel that nexus
 //! imports both call it, so the visualizations live here once. [`append`] puts a converted log into a
-//! recording on disk, for a caller whose recording another process wrote.
+//! recording on disk, for a caller whose recording another process wrote. [`read`] answers the PX4
+//! logs a recording holds.
 //!
 //! The recording is encoded from chunks directly, not through Rerun's `RecordingStream`: the stream
 //! starts threads and pulls in networking, and neither builds for wasm32.
@@ -22,10 +23,10 @@
 //! | `home` | The home position, each time PX4 sets it |
 //! | `setpoint`, `setpoint/yaw` | The position setpoint and its yaw |
 //! | `mission_item` | The current mission item, labelled with its command |
-//! | `log` | PX4's text messages, a `TextLog` each |
+//! | `log` | PX4's text messages, a `TextLog` each, with its syslog severity beside the level |
 //! | `info/<key>` | One of the log's info messages, static: the key's values in log order, each in its ULog type, a multi-part value joined into one |
 //! | `header/timestamp_us` | The ULog file header's timestamp in microseconds, static |
-//! | `timeseries/<topic>` | Every numeric field of every topic, one series per field (opt in) |
+//! | `timeseries/<topic>/<n>` | Every numeric field of each topic instance, `<n>` its multi id, one series per field (opt in) |
 //!
 //! Every row keeps PX4's own frames: positions in its local world, north-east-down, and the body
 //! frame forward-right-down, which the attitude rotates into the world as `Transform3D` expects. No
@@ -36,8 +37,12 @@
 
 mod info;
 mod parse;
+mod read;
 mod viz;
 mod write;
+
+pub use parse::InfoValue;
+pub use read::{read, Log, Message, Topic};
 
 use re_chunk::RowId;
 use re_log_encoding::Encoder;

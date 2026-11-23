@@ -71,7 +71,7 @@ def test_append_joins_the_files_recording_and_keeps_its_blueprint(tmp_path):
         "/px4_sitl/logs",
         "/px4_sitl/logs/vehicle",
         "/px4_sitl/logs/log",
-        "/px4_sitl/logs/timeseries/vehicle_attitude",
+        "/px4_sitl/logs/timeseries/vehicle_attitude/0",
     } <= after
     assert len([e for e in after if e.startswith("/view/")]) == len([e for e in before if e.startswith("/view/")])
     # One footer: the chunk reader, which reads the file by its footer, sees the new rows too.
@@ -89,6 +89,22 @@ def test_append_needs_both_files(tmp_path):
 def test_garbage_is_a_value_error():
     with pytest.raises(ValueError):
         ulog_rrd.convert(b"not a ulog")
+
+
+def test_read_answers_the_same_topics_messages_and_info():
+    """Python answers the same topics, messages and info."""
+    logs = ulog_rrd.read(ulog_rrd.convert(flight(), scalars=True))
+    got = [
+        (
+            list(topic.columns),
+            len(topic.timestamps_us),
+            [(m.timestamp_us, m.level, m.text) for m in log.messages],
+        )
+        for log in logs
+        for topic in log.topics
+        if (topic.name, topic.instance) == ("vehicle_local_position", 0)
+    ]
+    assert got == [(["x", "y", "z"], 2, [(1_050_000, 6, "[commander] Takeoff detected")])]
 
 
 def test_views_name_the_prefix():
