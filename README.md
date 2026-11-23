@@ -28,6 +28,8 @@ Each path sits under the `entity_path_prefix` the caller gives, or at the root.
 | `setpoint`, `setpoint/yaw` | The position setpoint and its yaw |
 | `mission_item` | The current mission item, labelled with its command |
 | `log` | PX4's text messages, a `TextLog` each |
+| `info/<key>` | One of the log's info messages, static: the key's values in log order, each in its ULog type, a multi-part value joined into one |
+| `header/timestamp_us` | The ULog file header's timestamp in microseconds, static |
 | `timeseries/<topic>` | Every numeric field of every topic, one series per field (`scalars`) |
 
 Every row keeps PX4's own frames: positions in its local world, north-east-down, and the body
