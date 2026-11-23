@@ -65,8 +65,8 @@ for (const log of read(new Uint8Array(rrdBytes))) {
 }
 ```
 
-`read` answers one log per prefix the recording holds a PX4 log under, found without being told.
-Each log has `prefix` and the methods of Pulsar's `ParserLike`, in its shapes: an array field `q[0]`
+`read` answers one log per recording and prefix a file holds a PX4 log under, found without being
+told. Each log has `recordingId`, `prefix` and the methods of Pulsar's `ParserLike`, in its shapes: an array field `q[0]`
 is `q_0`. A recording holds no parameters, so the parameter methods answer empty values.
 
 ## Python
@@ -90,9 +90,9 @@ ulog_rrd.append(
 # The blueprint views of what was logged, for a blueprint of your own
 ulog_rrd.views("px4_sitl/logs")
 
-# The PX4 logs a recording holds, one per prefix
+# The PX4 logs a file holds, one per recording and prefix
 for log in ulog_rrd.read(open("run.rrd", "rb").read()):
-    print(log.prefix, log.info.get("sys_name"), len(log.messages))
+    print(log.recording_id, log.prefix, log.info.get("sys_name"), len(log.messages))
     for topic in log.topics:  # by name, then instance
         print(topic.name, topic.instance, len(topic.timestamps_us), list(topic.columns))
 ```
