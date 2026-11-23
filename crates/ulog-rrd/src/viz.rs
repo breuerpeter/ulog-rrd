@@ -5,6 +5,7 @@ use re_sdk_types::archetypes::{
 };
 use re_sdk_types::components::{Color, Radius, TextLogLevel};
 use re_sdk_types::datatypes::Quaternion;
+use re_sdk_types::AsComponents as _;
 
 use crate::info;
 use crate::parse::{InfoValue, Table, Ulog};
@@ -339,12 +340,19 @@ fn mission(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     )
 }
 
-/// PX4's text messages.
+/// PX4's text messages, each with its syslog severity beside the level the viewer shows, since the
+/// level folds several severities into one.
 fn text(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     if log.messages.is_empty() {
         return Ok(());
     }
     let times: Vec<u64> = log.messages.iter().map(|m| m.timestamp).collect();
+    let severity = info::severity(log.messages.iter().map(|m| m.severity))
+        .as_serialized_batches()
+        .into_iter()
+        .map(|batch| batch.column_of_unit_batches())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(err)?;
     w.columns(
         "log",
         &times,
@@ -352,7 +360,8 @@ fn text(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
             .with_many_text(log.messages.iter().map(|m| m.text.as_str()))
             .with_many_level(log.messages.iter().map(|m| level(m.severity)))
             .columns_of_unit_batches()
-            .map_err(err)?,
+            .map_err(err)?
+            .chain(severity),
     )
 }
 
