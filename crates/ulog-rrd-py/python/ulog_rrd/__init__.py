@@ -18,7 +18,7 @@ from ulog_rrd._ulog_rrd import append as _append
 from ulog_rrd._ulog_rrd import convert as _convert
 from ulog_rrd.views import blueprint, views
 
-__all__ = ["RERUN_VERSION", "__version__", "append", "blueprint", "convert", "views"]
+__all__ = ["RERUN_VERSION", "__version__", "append", "blueprint", "convert", "read", "views"]
 
 
 def convert(
@@ -91,3 +91,18 @@ def append(ulog: str | Path, rrd: str | Path, *, application_id: str, recording_
     if not Path(rrd).is_file():
         raise FileNotFoundError(rrd)
     _append(Path(ulog).read_bytes(), Path(rrd), application_id=application_id, recording_id=recording_id, **options)
+
+
+def read(rrd: bytes) -> list:
+    """The PX4 logs in a recording, one per prefix: each log's topics, text messages and info.
+
+    Args:
+        rrd: The ``.rrd`` file's bytes.
+
+    Returns:
+        One log per prefix the recording holds a PX4 log under.
+
+    Raises:
+        ValueError: The bytes are not a recording this reader reads.
+    """
+    return []

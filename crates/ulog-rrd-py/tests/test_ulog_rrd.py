@@ -91,6 +91,22 @@ def test_garbage_is_a_value_error():
         ulog_rrd.convert(b"not a ulog")
 
 
+def test_read_answers_the_same_topics_messages_and_info():
+    """Python answers the same topics, messages and info."""
+    logs = ulog_rrd.read(ulog_rrd.convert(flight(), scalars=True))
+    got = [
+        (
+            list(topic.columns),
+            len(topic.timestamps_us),
+            [(m.timestamp_us, m.level, m.text) for m in log.messages],
+        )
+        for log in logs
+        for topic in log.topics
+        if (topic.name, topic.instance) == ("vehicle_local_position", 0)
+    ]
+    assert got == [(["x", "y", "z"], 2, [(1_050_000, 6, "[commander] Takeoff detected")])]
+
+
 def test_views_name_the_prefix():
     bp = ulog_rrd.blueprint("px4_sitl/logs")
     assert isinstance(bp, rrb.Blueprint)
