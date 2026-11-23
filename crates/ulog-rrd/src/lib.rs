@@ -36,8 +36,12 @@
 
 mod info;
 mod parse;
+mod read;
 mod viz;
 mod write;
+
+pub use parse::InfoValue;
+pub use read::{read, Log, Message, Topic};
 
 use re_chunk::RowId;
 use re_log_encoding::Encoder;
