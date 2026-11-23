@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
 
 use yule_log::builder::ULogParserBuilder;
-use yule_log::model::inst::{self, FieldValue};
+use yule_log::model::inst::{self, FieldValue, ParameterValue};
 use yule_log::model::msg::UlogMessage;
 
 use crate::{err, Error};
@@ -93,6 +93,8 @@ pub struct Ulog {
     /// By topic name and multi id.
     pub tables: HashMap<(String, u8), Table>,
     pub messages: Vec<Message>,
+    /// The parameters by name, each its value at the start and at each change, as (ULog time, value).
+    pub params: BTreeMap<String, Vec<(u64, f64)>>,
     /// The span of the log in ULog time: the header's start, and the median over the topics of the
     /// last timestamp each logged, so one topic with a stray timestamp does not stretch it.
     pub start_us: u64,
@@ -187,15 +189,22 @@ pub fn parse(bytes: &[u8]) -> Result<Ulog, Error> {
     let mut tables: HashMap<(String, u8), Table> = HashMap::new();
     let mut messages = Vec::new();
     let mut info: BTreeMap<String, Vec<InfoValue>> = BTreeMap::new();
+    let mut params: BTreeMap<String, Vec<(u64, f64)>> = BTreeMap::new();
     let mut start_us = 0;
+    // A parameter message carries no time: it takes the last data message's, the header's before any.
+    let mut last_us = 0;
     let mut row = Vec::new();
     // The parser drops the `timestamp` and `_padding` fields; `data.timestamp` keeps the time. It
     // yields the file header only when asked.
     let parser = ULogParserBuilder::new(Cursor::new(bytes)).include_header(true).build().map_err(err)?;
     for msg in parser {
         match msg.map_err(err)? {
-            UlogMessage::Header(header) => start_us = header.timestamp,
+            UlogMessage::Header(header) => {
+                start_us = header.timestamp;
+                last_us = header.timestamp;
+            }
             UlogMessage::LoggedData(data) => {
+                last_us = data.timestamp;
                 let topic = (data.data.name.to_string(), data.data.multi_id_index.unwrap_or(0));
                 let table = tables.entry(topic).or_insert_with(|| {
                     let mut names = Vec::new();
@@ -222,11 +231,21 @@ pub fn parse(bytes: &[u8]) -> Result<Ulog, Error> {
             }
             UlogMessage::Info(i) => add_info(&mut info, i.key, &i.value, false),
             UlogMessage::MultiInfo(i) => add_info(&mut info, i.key, &i.value, i.is_continued),
+            UlogMessage::Parameter(p) => {
+                let value = match p.value {
+                    ParameterValue::INT32(v) => v as f64,
+                    ParameterValue::FLOAT(v) => v as f64,
+                };
+                let rows = params.entry(p.key).or_default();
+                if rows.last().is_none_or(|&(_, last)| last != value) {
+                    rows.push((last_us, value));
+                }
+            }
             _ => {}
         }
     }
     let mut ends: Vec<u64> = tables.values().filter_map(|t| t.timestamps.iter().copied().max()).collect();
     ends.sort_unstable();
     let end_us = ends.get(ends.len() / 2).copied().unwrap_or(start_us);
-    Ok(Ulog { info, tables, messages, start_us, end_us })
+    Ok(Ulog { info, tables, messages, params, start_us, end_us })
 }

@@ -74,6 +74,7 @@ pub fn visualize(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     mission(log, w)?;
     text(log, w)?;
     header(log, w)?;
+    params(log, w)?;
     if w.scalars() {
         scalars(log, w)?;
     }
@@ -86,6 +87,16 @@ fn header(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
     w.static_row("header/timestamp_us", &info::row(&[InfoValue::U64(log.start_us)]))?;
     for (key, values) in &log.info {
         w.static_row(&format!("info/{key}"), &info::row(values))?;
+    }
+    Ok(())
+}
+
+/// The parameters, one scalar series each under `params/`: a row at the start and at each change.
+fn params(log: &Ulog, w: &mut Writer<'_>) -> Result<(), Error> {
+    for (name, rows) in &log.params {
+        let times: Vec<u64> = rows.iter().map(|&(t, _)| t).collect();
+        let values = rows.iter().map(|&(_, v)| v);
+        w.columns(&format!("params/{name}"), &times, Scalars::new(values).columns_of_unit_batches().map_err(err)?)?;
     }
     Ok(())
 }
