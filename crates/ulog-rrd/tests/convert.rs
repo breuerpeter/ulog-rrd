@@ -66,6 +66,14 @@ impl Ulog {
         payload.extend_from_slice(value);
         self.message(b'M', &payload);
     }
+
+    /// A parameter message: `key` is the type and the name, as in `int32_t SYS_AUTOSTART`.
+    fn param(&mut self, key: &str, value: [u8; 4]) {
+        let mut payload = vec![key.len() as u8];
+        payload.extend_from_slice(key.as_bytes());
+        payload.extend_from_slice(&value);
+        self.message(b'P', &payload);
+    }
 }
 
 /// A flight of three position samples north-east-down (1, 2, -3), (2, 2, -3), (3, 2, -3) with an
@@ -368,6 +376,88 @@ fn info_rows_sit_under_the_entity_path_prefix() {
 fn a_log_with_no_info_messages_converts_with_no_info_rows() {
     let chunks = chunks(&convert(&flight(), &Options::default()).expect("convert"));
     assert!(!chunks.keys().any(|k| k.starts_with("/info")), "{:?}", chunks.keys());
+}
+
+// Parameters: `params/<name>`, a scalar row at the start and at each change.
+
+/// The scalar rows at `path` as (time in µs, value), in row order; empty when nothing is logged there.
+fn series(chunks: &BTreeMap<String, Vec<Chunk>>, path: &str) -> Vec<(i64, f64)> {
+    use re_sdk_types::archetypes::Scalars;
+    use re_sdk_types::external::arrow::array::{Array, Float64Array};
+
+    let mut out = Vec::new();
+    for chunk in chunks.get(path).into_iter().flatten() {
+        let times = chunk.timelines().values().next().map(|t| t.times_raw().to_vec()).unwrap_or_default();
+        let Some(rows) = chunk.components().get(Scalars::descriptor_scalars().component) else { continue };
+        for row in 0..rows.list_array.len() {
+            let values = rows.list_array.value(row);
+            let values = values.as_any().downcast_ref::<Float64Array>().expect("f64 scalars");
+            out.extend(values.values().iter().map(|v| (times.get(row).map_or(0, |t| t / 1000), *v)));
+        }
+    }
+    out
+}
+
+/// A log with `MPC_XY_VEL_MAX` = 12.5 at the start, a data message at 1.1 s, then `then` set in flight.
+fn changed_in_flight(then: f32) -> Vec<u8> {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.format("home_position:uint64_t timestamp;float x;float y;float z;");
+    ulog.param("float MPC_XY_VEL_MAX", 12.5f32.to_le_bytes());
+    ulog.subscribe(0, 0, "home_position");
+    ulog.data(0, 1_100_000, &[0.0, 0.0, 0.0]);
+    ulog.param("float MPC_XY_VEL_MAX", then.to_le_bytes());
+    ulog.0
+}
+
+/// A parameter from the definitions section sits at `params/<name>`, one scalar row at the file
+/// header's timestamp.
+#[test]
+fn a_parameter_from_the_definitions_sits_at_its_name_at_the_headers_timestamp() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.param("int32_t SYS_AUTOSTART", 4001i32.to_le_bytes());
+    let chunks = chunks(&convert(&ulog.0, &Options::default()).expect("convert"));
+    assert_eq!(series(&chunks, "/params/SYS_AUTOSTART"), [(1_000_000, 4001.0)]);
+}
+
+/// An `int32` parameter and a `float` parameter each keep their exact values.
+#[test]
+fn an_int32_and_a_float_parameter_keep_their_exact_values() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.param("int32_t SYS_AUTOSTART", 4001i32.to_le_bytes());
+    ulog.param("float MPC_XY_VEL_MAX", 12.5f32.to_le_bytes());
+    let chunks = chunks(&convert(&ulog.0, &Options::default()).expect("convert"));
+    let values: Vec<Vec<f64>> = ["SYS_AUTOSTART", "MPC_XY_VEL_MAX"]
+        .into_iter()
+        .map(|name| series(&chunks, &format!("/params/{name}")).into_iter().map(|(_, v)| v).collect())
+        .collect();
+    assert_eq!(values, [vec![4001.0], vec![12.5]]);
+}
+
+/// A change in the data section adds a row, timed by the last data message before it.
+#[test]
+fn a_change_in_flight_adds_a_row_at_the_last_data_messages_time() {
+    let chunks = chunks(&convert(&changed_in_flight(8.0), &Options::default()).expect("convert"));
+    assert_eq!(series(&chunks, "/params/MPC_XY_VEL_MAX"), [(1_000_000, 12.5), (1_100_000, 8.0)]);
+}
+
+/// A data-section message that repeats the current value adds no row.
+#[test]
+fn a_parameter_set_to_its_current_value_adds_no_row() {
+    let chunks = chunks(&convert(&changed_in_flight(12.5), &Options::default()).expect("convert"));
+    assert_eq!(series(&chunks, "/params/MPC_XY_VEL_MAX"), [(1_000_000, 12.5)]);
+}
+
+/// The parameter rows sit under the entity path prefix.
+#[test]
+fn parameter_rows_sit_under_the_entity_path_prefix() {
+    let mut ulog = Ulog::new(1_000_000);
+    ulog.param("int32_t SYS_AUTOSTART", 4001i32.to_le_bytes());
+    let opts = Options { entity_path_prefix: Some("px4".into()), ..Options::default() };
+    let chunks = chunks(&convert(&ulog.0, &opts).expect("convert"));
+    assert_eq!(
+        (series(&chunks, "/px4/params/SYS_AUTOSTART"), chunks.keys().any(|k| k.starts_with("/params"))),
+        (vec![(1_000_000, 4001.0)], false)
+    );
 }
 
 // The reader: a recording back into the PX4 logs it holds.

@@ -1,4 +1,5 @@
-//! A recording back into the PX4 logs it holds: each log's topics, text messages and info.
+//! A recording back into the PX4 logs it holds: each log's topics, text messages, info and
+//! parameters.
 //!
 //! A file may hold several recordings, and each is read on its own. A log is wherever a recording
 //! holds `header/timestamp_us`, which every conversion writes; what comes before it is the prefix the
@@ -34,6 +35,9 @@ pub struct Log {
     pub messages: Vec<Message>,
     /// The info messages by key, each key's values in log order.
     pub info: BTreeMap<String, Vec<InfoValue>>,
+    /// The parameters by name, each its value at the start and at each change, as (time in
+    /// microseconds on the recording's timeline, value).
+    pub params: BTreeMap<String, Vec<(i64, f64)>>,
 }
 
 /// One topic instance's numeric fields as time series.
@@ -105,12 +109,23 @@ fn log(recording_id: &str, entities: &BTreeMap<String, Vec<Chunk>>, base: &str) 
             .collect();
         info.insert(key.to_owned(), values);
     }
+    let mut params = BTreeMap::new();
+    for (name, chunks) in under("params") {
+        let mut rows = Vec::new();
+        for (time, row) in column(chunks, Scalars::descriptor_scalars().component) {
+            let values =
+                row.as_any().downcast_ref::<Float64Array>().ok_or_else(|| Error(format!("{name}: not f64")))?;
+            rows.extend(values.values().iter().map(|&v| (time.unwrap_or(0) / 1000, v)));
+        }
+        params.insert(name.to_owned(), rows);
+    }
     Ok(Log {
         recording_id: recording_id.to_owned(),
         prefix: base.strip_prefix('/').map(str::to_owned),
         topics,
         messages: entities.get(&format!("{base}/log")).map_or_else(|| Ok(Vec::new()), |c| messages(c))?,
         info,
+        params,
     })
 }
 

@@ -174,22 +174,52 @@ impl Log {
         events
     }
 
-    /// `{}`: a recording holds no parameters yet.
+    /// `{ [name]: value }`, each parameter's last value.
     #[wasm_bindgen(js_name = getParameters)]
     pub fn get_parameters(&self) -> Object {
-        Object::new()
+        let obj = Object::new();
+        for (name, rows) in &self.0.params {
+            if let Some(&(_, value)) = rows.last() {
+                set(&obj, name, &JsValue::from_f64(value));
+            }
+        }
+        obj
     }
 
-    /// `{}`: a recording holds no parameters yet.
+    /// `{ [name]: [{ value, timestamp }] }` for each parameter that changed in flight or was first
+    /// logged in flight, as Pulsar's parser answers it: the start value at timestamp 0, then each
+    /// change at its time in µs. The recording does not say where the definitions section ends, so a
+    /// first row is the start value when it sits at the earliest time of any parameter, where every
+    /// row from the definitions section sits.
     #[wasm_bindgen(js_name = getChangedParameters)]
     pub fn get_changed_parameters(&self) -> Object {
-        Object::new()
+        let params = &self.0.params;
+        let start = params.values().filter_map(|rows| rows.first()).map(|&(time, _)| time).min();
+        let obj = Object::new();
+        for (name, rows) in params {
+            let at_start = rows.first().map(|&(time, _)| time) == start;
+            if at_start && rows.len() < 2 {
+                continue;
+            }
+            let entries: Array = rows
+                .iter()
+                .enumerate()
+                .map(|(i, &(time, value))| {
+                    let entry = Object::new();
+                    set(&entry, "value", &JsValue::from_f64(value));
+                    set(&entry, "timestamp", &JsValue::from_f64(if i == 0 && at_start { 0.0 } else { time as f64 }));
+                    JsValue::from(entry)
+                })
+                .collect();
+            set(&obj, name, &entries);
+        }
+        obj
     }
 
-    /// `undefined`: a recording holds no parameters yet.
+    /// The parameter's last value; `undefined` for one the log does not hold.
     #[wasm_bindgen(js_name = getParameter)]
-    pub fn get_parameter(&self, _name: &str) -> Option<f64> {
-        None
+    pub fn get_parameter(&self, name: &str) -> Option<f64> {
+        self.0.params.get(name)?.last().map(|&(_, value)| value)
     }
 
     /// `Map<string, string | number | bigint>`: each info key's first value, bytes left out.

@@ -41,6 +41,12 @@ export class Ulog {
     this.message('M', bytes([isContinued ? 1 : 0, k.length], k, value))
   }
 
+  /** A parameter message: `key` is the type and the name, as in `float MPC_XY_VEL_MAX`; `value` its 4 bytes. */
+  param(key, value) {
+    const k = new TextEncoder().encode(key)
+    this.message('P', bytes([k.length], k, value))
+  }
+
   bytes() {
     return bytes(...this.#parts)
   }
