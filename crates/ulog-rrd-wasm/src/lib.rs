@@ -3,6 +3,8 @@
 
 use wasm_bindgen::prelude::*;
 
+mod read;
+
 /// The ulog-rrd version.
 #[wasm_bindgen]
 pub fn version() -> String {
@@ -102,15 +104,4 @@ pub fn convert(ulog: &[u8], options: Option<Options>) -> Result<Vec<u8>, JsError
         rrd.extend_from_slice(&blueprint()?);
     }
     Ok(rrd)
-}
-
-/// One PX4 log in a recording, under the prefix it was logged with, read through the methods of
-/// Pulsar's `ParserLike`.
-#[wasm_bindgen]
-pub struct Log {}
-
-/// The PX4 logs in a recording's `.rrd` bytes, one per prefix.
-#[wasm_bindgen]
-pub fn read(_rrd: &[u8]) -> Result<Vec<Log>, JsError> {
-    Ok(Vec::new())
 }
